@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum UserRole {
+  employee
+  manager
+  hr
+  admin
+}
+
+enum LeaveStatus {
+  pending
+  approved
+  rejected
+}
+
+model Company {
+  id        Int            @id @default(autoincrement())
+  name      String         @db.VarChar(120)
+  users     User[]
+  requests  LeaveRequest[]
+}
+
+model Department {
+  id    Int    @id @default(autoincrement())
+  name  String @db.VarChar(120)
+  users User[]
+}
+
+model JobTitle {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(120)
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  firstName    String         @db.VarChar(80)
+  lastName     String         @db.VarChar(80)
+  email        String         @unique @db.VarChar(160)
+  passwordHash String?        @db.VarChar(200)
+  role         UserRole
+  jobTitle     String         @db.VarChar(80)
+  initials     String         @db.VarChar(4)
+  companyId    Int
+  company      Company        @relation(fields: [companyId], references: [id])
+  departmentId Int
+  department   Department     @relation(fields: [departmentId], references: [id])
+  managerId    Int?
+  manager      User?          @relation("Reports", fields: [managerId], references: [id])
+  reports      User[]         @relation("Reports")
+  balances     LeaveBalance[]
+  requests      LeaveRequest[] @relation("Requester")
+  reviews      LeaveRequest[] @relation("Reviewer")
+  notifications Notification[]
+
+  @@index([companyId])
+  @@index([managerId])
+}
+
+model LeaveType {
+  id             Int            @id @default(autoincrement())
+  name           String         @unique @db.VarChar(120)
+  deductsBalance Boolean        @default(true)
+  requests       LeaveRequest[]
+}
+
+model LeaveBalance {
+  id        Int  @id @default(autoincrement())
+  userId    Int
+  user      User @relation(fields: [userId], references: [id])
+  year      Int
+  totalDays Int
+  q1Quota   Int
+  q2Quota   Int
+  q3Quota   Int
+  q4Quota   Int
+
+  @@unique([userId, year])
+}
+
+model LeaveRequest {
+  id          Int         @id @default(autoincrement())
+  userId      Int
+  user        User        @relation("Requester", fields: [userId], references: [id])
+  companyId   Int
+  company     Company     @relation(fields: [companyId], references: [id])
+  leaveTypeId Int
+  leaveType   LeaveType   @relation(fields: [leaveTypeId], references: [id])
+  startDate   DateTime    @db.Date
+  endDate     DateTime    @db.Date
+  workDays    Int
+  note        String?     @db.Text
+  status      LeaveStatus
+  reviewerId  Int?
+  reviewer    User?       @relation("Reviewer", fields: [reviewerId], references: [id])
+  reviewedAt    DateTime?
+  createdAt     DateTime       @default(now())
+  notifications Notification[]
+
+  @@index([userId, status])
+  @@index([companyId, status])
+  @@index([startDate])
+}
+
+model Notification {
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id])
+  requestId Int?
+  request   LeaveRequest? @relation(fields: [requestId], references: [id])
+  title     String        @db.VarChar(160)
+  detail    String        @db.VarChar(240)
+  href      String        @db.VarChar(80)
+  readAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([userId, readAt])
+}
