@@ -38,6 +38,12 @@ model JobTitle {
   name String @unique @db.VarChar(120)
 }
 
+model StaffRole {
+  id   Int      @id @default(autoincrement())
+  name String   @unique @db.VarChar(120)
+  kind UserRole
+}
+
 model User {
   id           Int            @id @default(autoincrement())
   firstName    String         @db.VarChar(80)
@@ -45,22 +51,27 @@ model User {
   email        String         @unique @db.VarChar(160)
   passwordHash String?        @db.VarChar(200)
   role         UserRole
+  roleTitle    String         @default("Munkavállaló") @db.VarChar(120)
   jobTitle     String         @db.VarChar(80)
   initials     String         @db.VarChar(4)
   companyId    Int
   company      Company        @relation(fields: [companyId], references: [id])
   departmentId Int
   department   Department     @relation(fields: [departmentId], references: [id])
-  managerId    Int?
-  manager      User?          @relation("Reports", fields: [managerId], references: [id])
-  reports      User[]         @relation("Reports")
-  balances     LeaveBalance[]
-  requests      LeaveRequest[] @relation("Requester")
-  reviews      LeaveRequest[] @relation("Reviewer")
-  notifications Notification[]
+  managerId      Int?
+  manager        User?          @relation("Reports", fields: [managerId], references: [id])
+  reports        User[]         @relation("Reports")
+  active         Boolean        @default(true)
+  inactiveReason String?        @db.VarChar(40)
+  inactiveAt     DateTime?
+  balances       LeaveBalance[]
+  requests       LeaveRequest[] @relation("Requester")
+  reviews        LeaveRequest[] @relation("Reviewer")
+  notifications  Notification[]
 
   @@index([companyId])
   @@index([managerId])
+  @@index([active])
 }
 
 model LeaveType {

@@ -60,7 +60,8 @@ export async function getCurrentUser() {
     include: { company: true, department: true },
   });
 
-  if (!user) redirect("/login");
+  if (!user) redirect("/api/auth/logout");
+  if (!user.active) redirect("/api/auth/logout");
   return user;
 }
 
@@ -155,7 +156,12 @@ export async function getShell(): Promise<ShellData> {
     companyId: selected.id,
     user: { managerId: user.id },
   };
-  const pendingCount = await prisma.leaveRequest.count({ where: pendingWhere });
+  const [pendingCount, directReportCount] = await Promise.all([
+    prisma.leaveRequest.count({ where: pendingWhere }),
+    prisma.user.count({
+      where: { managerId: user.id, role: { not: "admin" } },
+    }),
+  ]);
 
   const hr = await prisma.user.findMany({
     where: { role: "hr" },
@@ -177,6 +183,7 @@ export async function getShell(): Promise<ShellData> {
     selectedCompanyId: selected.id,
     selectedCompanyName: selected.name,
     pendingApprovals: pendingCount,
+    hasDirectReports: user.role !== "admin" && directReportCount > 0,
     notifications: (
       await prisma.notification.findMany({
         where: { userId: user.id, readAt: null },
@@ -444,7 +451,8 @@ export async function markNotificationsRead(userId: number, href: string) {
 }
 
 export async function getOrg(companyId: number) {
-  const [people, departments, jobTitles] = await Promise.all([
+  const year = new Date().getFullYear();
+  const [people, departments, jobTitles, staffRoles] = await Promise.all([
     prisma.user.findMany({
       where: { companyId, role: { not: "admin" } },
       include: { department: true },
@@ -452,20 +460,63 @@ export async function getOrg(companyId: number) {
     }),
     prisma.department.findMany({ orderBy: { name: "asc" } }),
     prisma.jobTitle.findMany({ orderBy: { name: "asc" } }),
+    prisma.staffRole.findMany({
+      where: { kind: { in: ["employee", "manager", "hr"] } },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
+  const userIds = people.map((person) => person.id);
+  const [balances, approvedRequests] = await Promise.all([
+    userIds.length === 0
+      ? Promise.resolve([])
+      : prisma.leaveBalance.findMany({
+          where: { userId: { in: userIds }, year },
+          select: { userId: true, totalDays: true },
+        }),
+    userIds.length === 0
+      ? Promise.resolve([])
+      : prisma.leaveRequest.findMany({
+          where: {
+            userId: { in: userIds },
+            status: "approved",
+            leaveType: { deductsBalance: true },
+            startDate: {
+              gte: new Date(`${year}-01-01T00:00:00.000Z`),
+              lt: new Date(`${year + 1}-01-01T00:00:00.000Z`),
+            },
+          },
+          select: { userId: true, workDays: true },
+        }),
+  ]);
+
+  const totalByUser = new Map(balances.map((row) => [row.userId, row.totalDays]));
+  const usedByUser = new Map<number, number>();
+  for (const request of approvedRequests) {
+    usedByUser.set(request.userId, (usedByUser.get(request.userId) ?? 0) + request.workDays);
+  }
+
   return {
-    people: people.map((person) => ({
-      id: person.id,
-      firstName: person.firstName,
-      lastName: person.lastName,
-      email: person.email,
-      jobTitle: person.jobTitle,
-      role: person.role,
-      departmentId: person.departmentId,
-      department: person.department.name,
-      managerId: person.managerId,
-    })),
+    people: people.map((person) => {
+      const leaveTotalDays = totalByUser.get(person.id) ?? 0;
+      const usedDays = usedByUser.get(person.id) ?? 0;
+      return {
+        id: person.id,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        email: person.email,
+        jobTitle: person.jobTitle,
+        role: person.role,
+        roleTitle: person.roleTitle,
+        departmentId: person.departmentId,
+        department: person.department.name,
+        managerId: person.managerId,
+        active: person.active,
+        inactiveReason: person.inactiveReason,
+        leaveTotalDays,
+        leaveAvailableDays: Math.max(leaveTotalDays - usedDays, 0),
+      };
+    }),
     departments: departments.map((department) => ({
       id: department.id,
       name: department.name,
@@ -473,6 +524,11 @@ export async function getOrg(companyId: number) {
     jobTitles: jobTitles.map((title) => ({
       id: title.id,
       name: title.name,
+    })),
+    staffRoles: staffRoles.map((role) => ({
+      id: role.id,
+      name: role.name,
+      kind: role.kind,
     })),
   };
 }

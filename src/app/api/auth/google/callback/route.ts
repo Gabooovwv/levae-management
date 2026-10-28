@@ -40,8 +40,12 @@ export async function GET(request: Request) {
   const profile = (await profileResponse.json()) as { email?: string; email_verified?: boolean };
   if (!profile.email || profile.email_verified === false) return fail("google_failed");
 
-  const user = await prisma.user.findFirst({ where: { email: profile.email } });
+  const user = await prisma.user.findFirst({
+    where: { email: profile.email },
+    select: { id: true, active: true },
+  });
   if (!user) return fail("not_found");
+  if (!user.active) return fail("inactive");
 
   await setSession(user.id);
   return NextResponse.redirect(new URL("/", url.origin));

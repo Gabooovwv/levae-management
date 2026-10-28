@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,8 +13,6 @@ import {
   Network,
   Users,
 } from "lucide-react";
-import { toast } from "sonner";
-import { setCompany } from "@/app/actions";
 import { VirgoLogo } from "@/components/virgo-logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -25,13 +23,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -50,7 +41,7 @@ import {
 import type { ShellData } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const workspace = [
+const workspaceAll = [
   { href: "/", label: "Áttekintés", icon: LayoutGrid },
   { href: "/szabadsagaim", label: "Szabadságaim", icon: CalendarDays },
   { href: "/naptar", label: "Naptár", icon: CalendarDays },
@@ -75,16 +66,19 @@ function NavLinks({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const isAdmin = data.user.role === "admin";
+
+  const workspace = isAdmin
+    ? workspaceAll.filter((link) => link.href === "/")
+    : workspaceAll;
 
   const organization = [
-    ...(data.user.role === "admin"
-      ? [{ href: "/szervezet", label: "Dolgozók", icon: Network }]
-      : []),
-    { href: "/csapatom", label: "Csapatom", icon: Users },
+    ...(isAdmin ? [{ href: "/szervezet", label: "Dolgozók", icon: Network }] : []),
+    ...(data.hasDirectReports ? [{ href: "/csapatom", label: "Csapatom", icon: Users }] : []),
     { href: "/riportok", label: "Riportok", icon: BarChart3 },
   ];
 
-  function item(link: (typeof workspace)[number]) {
+  function item(link: (typeof workspaceAll)[number]) {
     const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
     const Icon = link.icon;
     return (
@@ -192,16 +186,15 @@ function SidebarBody({ data, onNavigate }: { data: ShellData; onNavigate?: () =>
 export function ShellFrame({ data, children }: { data: ShellData; children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
   const title = titles[pathname] ?? "Szabadságkezelés";
 
   return (
-    <div className="min-h-screen bg-background lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="hidden border-r border-border bg-white px-4 py-7 lg:flex lg:flex-col">
+    <div className="min-h-svh bg-background lg:grid lg:h-svh lg:grid-cols-[260px_minmax(0,1fr)] lg:overflow-hidden">
+      <aside className="hidden h-full overflow-y-auto border-r border-border bg-white px-4 py-7 lg:flex lg:flex-col">
         <SidebarBody data={data} />
       </aside>
-      <div className="min-w-0">
-        <header className="flex items-center justify-between gap-3 px-4 py-4 md:px-8">
+      <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto">
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-background/95 px-4 py-4 backdrop-blur md:px-8">
           <div className="flex items-center gap-3">
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger
@@ -224,30 +217,6 @@ export function ShellFrame({ data, children }: { data: ShellData; children: Reac
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Select
-              value={String(data.selectedCompanyId)}
-              onValueChange={(value) => {
-                if (!value) return;
-                startTransition(async () => {
-                  const result = await setCompany(Number(value));
-                  if (result.ok) toast.success(result.message);
-                  else toast.error(result.message);
-                });
-              }}
-            >
-              <SelectTrigger className="h-10! w-[168px] bg-white" disabled={pending} aria-label="Cég kiválasztása">
-                <SelectValue>
-                  {data.companies.find((company) => company.id === data.selectedCompanyId)?.name}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {data.companies.map((company) => (
-                  <SelectItem key={company.id} value={String(company.id)}>
-                    {company.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={

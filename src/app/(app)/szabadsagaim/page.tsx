@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { RequestDialog } from "@/components/request-dialog";
 import { RequestsTable } from "@/components/requests-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,7 @@ export default async function MyLeavePage({
 }) {
   const { status } = await searchParams;
   const user = await getCurrentUser();
+  if (user.role === "admin") redirect("/");
   const year = new Date().getFullYear();
   const [rows, balance, types] = await Promise.all([
     getMyRequests(user.id, status),

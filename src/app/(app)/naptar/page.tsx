@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCalendarEvents, getCurrentUser, getSelectedCompanyId } from "@/lib/data";
@@ -5,6 +6,7 @@ import { todayIso } from "@/lib/dates";
 
 export default async function CalendarPage() {
   const user = await getCurrentUser();
+  if (user.role === "admin") redirect("/");
   const companyId = await getSelectedCompanyId(user.companyId);
   const today = todayIso();
   const year = new Date().getFullYear();

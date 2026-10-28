@@ -11,6 +11,7 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.leaveType.deleteMany();
   await prisma.jobTitle.deleteMany();
+  await prisma.staffRole.deleteMany();
   await prisma.department.deleteMany();
   await prisma.company.deleteMany();
 
@@ -33,6 +34,14 @@ async function main() {
       { name: "HR kapcsolattartó" },
       { name: "Üzletfejlesztő" },
       { name: "Csapatvezető" },
+    ],
+  });
+
+  await prisma.staffRole.createMany({
+    data: [
+      { name: "Munkavállaló", kind: "employee" },
+      { name: "Vezető", kind: "manager" },
+      { name: "HR", kind: "hr" },
     ],
   });
 
@@ -65,6 +74,7 @@ async function main() {
       email: "admin@virgo.hu",
       passwordHash: await hashPassword("VirgoAdmin2026"),
       role: "admin",
+      roleTitle: "Admin",
       jobTitle: "Rendszergazda",
       initials: "VA",
       companyId: kft.id,
@@ -78,6 +88,7 @@ async function main() {
       lastName: "Kovács",
       email: "peter.kovacs@virgo.hu",
       role: "manager",
+      roleTitle: "Vezető",
       jobTitle: "Munkavállaló",
       initials: "KP",
       companyId: kft.id,
@@ -91,6 +102,7 @@ async function main() {
       lastName: "Nagy",
       email: "barbara.nagy@virgo.hu",
       role: "employee",
+      roleTitle: "Munkavállaló",
       jobTitle: "Marketinges",
       initials: "NB",
       companyId: kft.id,
@@ -105,6 +117,7 @@ async function main() {
       lastName: "Tóth",
       email: "ferenc.toth@virgo.hu",
       role: "employee",
+      roleTitle: "Munkavállaló",
       jobTitle: "Fejlesztő",
       initials: "TF",
       companyId: kft.id,
@@ -119,6 +132,7 @@ async function main() {
       lastName: "Varga",
       email: "sara.varga@virgo.hu",
       role: "employee",
+      roleTitle: "Munkavállaló",
       jobTitle: "Terméktervező",
       initials: "VS",
       companyId: kft.id,
@@ -133,6 +147,7 @@ async function main() {
       lastName: "Balogh",
       email: "mark.balogh@virgo.hu",
       role: "employee",
+      roleTitle: "Munkavállaló",
       jobTitle: "Fejlesztő",
       initials: "BM",
       companyId: kft.id,
@@ -147,6 +162,7 @@ async function main() {
       lastName: "Fekete",
       email: "dora.fekete@virgo.hu",
       role: "hr",
+      roleTitle: "HR",
       jobTitle: "HR kapcsolattartó",
       initials: "DF",
       companyId: kft.id,
@@ -160,6 +176,7 @@ async function main() {
       lastName: "Papp",
       email: "nora.papp@virgo.hu",
       role: "hr",
+      roleTitle: "HR",
       jobTitle: "HR kapcsolattartó",
       initials: "NP",
       companyId: kft.id,
@@ -173,6 +190,7 @@ async function main() {
       lastName: "Kiss",
       email: "anna.kiss@virgo.hu",
       role: "employee",
+      roleTitle: "Munkavállaló",
       jobTitle: "Üzletfejlesztő",
       initials: "KA",
       companyId: zrt.id,
@@ -186,6 +204,7 @@ async function main() {
       lastName: "Molnár",
       email: "gabor.molnar@virgo.hu",
       role: "manager",
+      roleTitle: "Vezető",
       jobTitle: "Csapatvezető",
       initials: "MG",
       companyId: zrt.id,

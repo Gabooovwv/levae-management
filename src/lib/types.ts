@@ -40,6 +40,7 @@ export type ShellData = {
   selectedCompanyId: number;
   selectedCompanyName: string;
   pendingApprovals: number;
+  hasDirectReports: boolean;
   notifications: { id: number; title: string; detail: string; href: string }[];
   hrContacts: { name: string; email: string }[];
 };

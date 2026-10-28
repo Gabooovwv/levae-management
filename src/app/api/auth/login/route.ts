@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const localUser = emailGuess
       ? await prisma.user.findFirst({
           where: { email: emailGuess },
-          select: { id: true, passwordHash: true },
+          select: { id: true, passwordHash: true, active: true },
         })
       : null;
 
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
       if (!(await verifyPassword(password, localUser.passwordHash))) {
         return fail(origin, "login_failed");
       }
+      if (!localUser.active) return fail(origin, "inactive");
       await setSession(localUser.id);
       return NextResponse.redirect(new URL("/", origin), 303);
     }
@@ -49,10 +50,11 @@ export async function POST(request: Request) {
 
     const user = await prisma.user.findFirst({
       where: { email },
-      select: { id: true, passwordHash: true },
+      select: { id: true, passwordHash: true, active: true },
     });
     if (!user) return fail(origin, "not_found");
     if (user.passwordHash) return fail(origin, "login_failed");
+    if (!user.active) return fail(origin, "inactive");
 
     await setSession(user.id);
     return NextResponse.redirect(new URL("/", origin), 303);

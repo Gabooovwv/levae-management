@@ -1,11 +1,20 @@
+import { redirect } from "next/navigation";
 import { StatusBadge } from "@/components/status-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRange } from "@/lib/dates";
 import { getCurrentUser, getSelectedCompanyId, getTeam } from "@/lib/data";
+import { prisma } from "@/lib/prisma";
 
 export default async function TeamPage() {
   const user = await getCurrentUser();
+  if (user.role === "admin") redirect("/");
+
+  const reportCount = await prisma.user.count({
+    where: { managerId: user.id, role: { not: "admin" } },
+  });
+  if (reportCount === 0) redirect("/");
+
   const companyId = await getSelectedCompanyId(user.companyId);
   const team = await getTeam(companyId, user.id, user.companyId);
 

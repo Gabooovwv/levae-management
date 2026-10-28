@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { CalendarClock, Check, Hourglass, TreePalm } from "lucide-react";
+import {
+  BarChart3,
+  CalendarClock,
+  Check,
+  Hourglass,
+  Network,
+  TreePalm,
+} from "lucide-react";
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { RequestDialog } from "@/components/request-dialog";
 import { RequestsTable } from "@/components/requests-table";
@@ -16,8 +23,63 @@ const tones = [
   "bg-[#f3eeff] text-[#673cf5]",
 ];
 
+const adminLinks = [
+  {
+    href: "/szervezet",
+    title: "Dolgozók",
+    description: "Szervezeti fa, beosztások, részlegek és szerepek kezelése.",
+    icon: Network,
+  },
+  {
+    href: "/riportok",
+    title: "Riportok",
+    description: "Összesített szabadságstatisztikák a szervezetről.",
+    icon: BarChart3,
+  },
+];
+
 export default async function HomePage() {
   const user = await getCurrentUser();
+
+  if (user.role === "admin") {
+    return (
+      <div className="grid gap-6">
+        <section>
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
+            Adminisztráció
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Szia, {user.firstName}!</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Adminisztrátorként a szervezeti felületeket kezelheted. Saját szabadságigényt innen nem lehet
+            leadni.
+          </p>
+        </section>
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {adminLinks.map((link) => {
+            const Icon = link.icon;
+            return (
+              <Link key={link.href} href={link.href} className="group">
+                <Card className="h-full gap-3 py-5 shadow-[0_12px_35px_rgba(42,46,103,0.04)] ring-border transition-colors group-hover:bg-[#f8f9fc]">
+                  <CardHeader>
+                    <CardDescription className="font-semibold">{link.title}</CardDescription>
+                    <CardAction>
+                      <div className="grid size-8 place-items-center rounded-lg bg-[#e8effd] text-primary">
+                        <Icon className="size-4" />
+                      </div>
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{link.description}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </section>
+      </div>
+    );
+  }
+
   const companyId = await getSelectedCompanyId(user.companyId);
   const [dashboard, types] = await Promise.all([
     getDashboard(user.id, companyId),

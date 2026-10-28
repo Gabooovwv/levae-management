@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/app/login/login-form";
 import { Button } from "@/components/ui/button";
 import { VirgoLogo } from "@/components/virgo-logo";
+import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
 const errors: Record<string, string> = {
@@ -12,6 +13,7 @@ const errors: Record<string, string> = {
   google_config: "A Google belépés még nincs beállítva.",
   google_failed: "A Google belépés nem sikerült. Próbáld újra.",
   not_found: "Ehhez a fiókhoz nincs szabadságkezelő felhasználó. Szólj a HR-nek.",
+  inactive: "Ez a fiók passzív. A belépéshez szólj a HR-nek vagy az adminnak.",
 };
 
 function GoogleMark() {
@@ -42,7 +44,15 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  if (await getSession()) redirect("/");
+  const session = await getSession();
+  if (session) {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true },
+    });
+    if (user) redirect("/");
+    redirect("/api/auth/logout");
+  }
 
   const { error } = await searchParams;
   const message = error ? errors[error] : undefined;
