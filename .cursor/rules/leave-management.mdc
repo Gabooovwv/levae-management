@@ -20,12 +20,15 @@ Next.js szabadságkezelő (HU UI). Teljes leírás: `README.md`, agent összefog
 - Hossz: csak **munkanapok** (`isWorkday` + `CalendarDay` holiday/workday).
 - Kiadható = `totalDays −` jóváhagyott, `deductsBalance` jogcímek. Függő is beleszámít az új igény keretellenőrzésébe.
 - Nincs felettes → igény nem adható le. Átfedő pending/approved időszak tilos.
-- Új igény → e-mail dolgozó+felettes; döntés → e-mail dolgozónak. Localhost: `emails/*.txt` (gitignore).
+- Új igény → e-mail dolgozó+felettes; döntés → e-mail dolgozónak (+ `reviewNote`). Localhost: `emails/*.txt` (gitignore).
+- Naptár: fél nap **átlós háromszög**, nem teljes cellakitöltés.
+- Szabadságaim: alap szűrő jóváhagyva; dupla katt → részletek (kérelem + válasz).
 
 ## Hol keress
 
-- Actions: `src/app/actions.ts`
+- Actions: `src/app/actions.ts` (leave + notification delete/clear)
 - Queries: `src/lib/data.ts`
 - Munkanap: `src/lib/dates.ts`, `src/lib/work-calendar.ts` — admin naptárváltozás után `recalculateLeaveRequestsOverlapping`
 - Mail: `src/lib/mail.ts`
+- Login UX: `src/app/login/login-view.tsx`, `login-form.tsx`, `POST /api/auth/login` JSON
 - Séma: `prisma/schema.prisma`

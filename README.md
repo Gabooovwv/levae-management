@@ -34,7 +34,7 @@ Ha a MySQL leállt, a Prisma pool beragadhat — `docker compose up -d` után é
 | --- | --- |
 | **admin** | Dolgozók (`/szervezet`), munkarend (`/munkarend`), beállítások (`/beallitasok`), riportok. Nincs saját szabadságigény, nincs Csapatom / Jóváhagyások. |
 | **dolgozó / vezető / HR** | Áttekintés, Szabadságaim, Naptár, Riportok. |
-| **Van közvetlen beosztottja** (`managerId` rá mutat) | Emellett: Csapatom, Jóváhagyások; a fejléc harangján a függő kérelmek száma. |
+| **Van közvetlen beosztottja** (`managerId` rá mutat) | Emellett: Csapatom, Jóváhagyások; fejlécben ClipboardCheck a függő kérelmekhez (+ badge). A harang az in-app értesítéseké. |
 
 A felettes–beosztott kapcsolat a szervezeti fában (`User.managerId`) él, nem pusztán a `role` mezőn.
 
@@ -59,11 +59,11 @@ A felettes–beosztott kapcsolat a szervezeti fában (`User.managerId`) él, nem
 
 ### 2. Jóváhagyás (felettes)
 
-1. Fejléc **harang** → jobb oldali sheet a `pending` kérelmekkel.
-2. Kiválasztás → modal: jóváhagyás / elutasítás.
+1. Fejléc **ClipboardCheck** ikon → jobb oldali sheet a `pending` kérelmekkel (csak ha van beosztott).
+2. Kiválasztás → modal (`review-request-dialog`): jóváhagyás / elutasítás, opcionális megjegyzés (`reviewNote`).
 3. A dolgozó értesítést és e-mailt kap. Jóváhagyáskor a kiadható napok csökkennek.
 
-A `/jovahagyasok` oldal ugyanezt a listát szolgálja táblázatos formában.
+A `/jovahagyasok` oldal ugyanezt a listát szolgálja táblázatos formában. A Csapatom listában a függő következő távollét ugyanebből a modalból bírálható.
 
 ### 3. Munkarend (admin)
 
@@ -95,10 +95,16 @@ Ha az admin módosít egy napot a munkarendben, az összes **pending/approved** 
 - Dolgozó: felvétel, szerkesztés, passzívvá tétel / újraaktiválás, törlés (beosztottak áthelyezése).
 - Éves szabadságkeret megadása; listában összes / kiadható; dupla kattintás a listában csak az összes nap gyorsszerkesztése.
 
-### 5. Egyéb oldalak
+### 5. Szabadságaim
+
+- Alapértelmezett státuszszűrő: **Jóváhagyva**.
+- **Dupla kattintás** egy sorra → részletek dialógus (`request-detail-dialog`): időszak, jogcím, dolgozói megjegyzés, felettes válasza / elutasítási indok (`reviewNote`).
+- Elutasított / jóváhagyott történet ikon + modal a listában (`request-history-dialog`).
+
+### 6. Egyéb oldalak
 
 - **Áttekintés** — keret, közelgő távollét, legutóbbi igények, csapat távollétei (ha van beosztott).
-- **Naptár** — DB-ből: saját (jóváhagyott/függő) és csapat (beosztottak / azonos felettes) távollétek munkanapokra; jobb oldalon saját időszaklista.
+- **Naptár** — DB-ből: saját (jóváhagyott/függő) és csapat (beosztottak / azonos felettes) távollétek munkanapokra; jobb oldalon saját időszaklista. **Fél nap** átlós háromszöggel jelenik meg (nem teljes négyzet).
 - **Csapatom** — a közvetlen beosztottak listája (keret + következő távollét); cégválasztótól független.
 - **Riportok** — DB-ből: saját éves összesítő; ha van beosztott, **Saját / Csapatom** tabok; adminnak szervezeti riport.
 
@@ -112,7 +118,15 @@ Ha az admin módosít egy napot a munkarendben, az összes **pending/approved** 
 | Elutasítás | Dolgozó |
 | Jóváhagyás | Dolgozó + a Beállításokban felvett extra e-mail címek (`ApprovalNotifyEmail`) |
 
-A dolgozó a fejléc harangjával jobb oldali sheetben látja az értesítéseket: **új = fehér**, **olvasott (egyszer rákattintott) = szürke**. A felettesnél emellett a függő kérelmek panelje is megmarad.
+A dolgozó a fejléc **harangjával** jobb oldali sheetben látja az értesítéseket (`notifications-panel`):
+
+- **új = fehér**, **olvasott = szürke**
+- kattintás → olvasottá jelölés + navigáció
+- soronkénti kuka: egy értesítés törlése (kilépő animáció)
+- lista fölötti kuka: összes törlése (soronkénti animáció)
+- Actions: `listMyNotifications`, `markNotificationRead`, `deleteMyNotification`, `clearMyNotifications`
+
+A felettesnél emellett a függő kérelmek panelje is megmarad (külön ikon).
 
 Az extra címzetteket az admin a `/beallitasok` oldalon kezeli. Csak **elfogadott** kérelmekről kapnak másolatot.
 
@@ -125,7 +139,11 @@ A mappa a `.gitignore`-ban van.
 ## Beléptetés
 
 1. **Google OAuth** — `/api/auth/google` → callback; csak regisztrált e-mail; opcionális `GOOGLE_HOSTED_DOMAIN`.
-2. **Űrlap** — ha van `passwordHash` (pl. admin), helyi jelszó; különben LDAP (`LDAP_*` env), majd e-mail → MySQL user.
+2. **Űrlap** (`login-form` + `login-view`) — ha van `passwordHash` (pl. admin), helyi jelszó; különben LDAP (`LDAP_*` env), majd e-mail → MySQL user.
+   - Submit: form lefagy, gombon spinner.
+   - `POST /api/auth/login` JSON (`Accept: application/json`) → `{ ok, redirectTo }` / `{ ok: false, error }`.
+   - Sikeres belépés: oldal kilépő animáció, majd navigáció.
+   - Betöltés: lépcsőzetes belépő animáció (`LoginReveal`).
 3. Session cookie (`AUTH_SECRET`); passzív felhasználó nem léphet be.
 
 `.env` Google részlet:
@@ -149,9 +167,9 @@ Redirect URI a Google Console-ban:
 | `User` | Dolgozó, `managerId`, `role`, aktív/passzív |
 | `LeaveBalance` | Éves keret + negyedéves kvóták |
 | `LeaveType` | Jogcím; `deductsBalance` = csökkenti-e a keretet |
-| `LeaveRequest` | Időszak, `workDays` (float), `halfDay`, státusz |
+| `LeaveRequest` | Időszak, `workDays` (float), `halfDay`, `reviewNote`, státusz |
 | `CalendarDay` | `holiday` / `workday` felülírás egy dátumra |
-| `Notification` | Fejléc / in-app értesítések |
+| `Notification` | Fejléc / in-app értesítések (törölhető) |
 | `ApprovalNotifyEmail` | Extra címzettek jóváhagyott kérelmekről |
 | `Company`, `Department`, `JobTitle`, `StaffRole` | Katalógusok |
 

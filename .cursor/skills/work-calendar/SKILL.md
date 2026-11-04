@@ -36,6 +36,14 @@ Loaders: `src/lib/work-calendar.ts`. Pure logic: `src/lib/dates.ts`.
 - Relocated Saturday inside a leave range **does** count
 - Seed defaults: `DEFAULT_HOLIDAYS_2026` in dates.ts → seed into `CalendarDay`
 
+## Employee leave calendar UI
+
+`leave-calendar.tsx` (Naptár / áttekintés):
+
+- Full day: solid cell tint (mine approved / pending / team)
+- **Half day** (`halfDay`): diagonal triangle via `clip-path: polygon(0 0, 100% 0, 0 100%)` — not a full square fill
+- Events from `getCalendarEvents` include `halfDay` flag
+
 ## After admin calendar change
 
 `setCalendarDay` calls `recalculateLeaveRequestsOverlapping(date)`:

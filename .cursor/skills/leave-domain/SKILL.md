@@ -27,7 +27,7 @@ Felettes = `User.managerId`, nem a `role === "manager"` önmagában.
 - used = approved + `deductsBalance` jogcímek `workDays` összege
 - available = total − used
 - pending beleszámít új igény ellenőrzésébe
-- half day: 0.5 munkanap
+- half day: 0.5 munkanap; naptárban átlós háromszög
 
 ## Munkanap
 
@@ -37,6 +37,18 @@ Felettes = `User.managerId`, nem a `role === "manager"` önmagában.
 2. `CalendarDay.holiday` → nem
 3. egyébként hétköznap igen, hétvége nem
 
+## Értesítések
+
+- Bell sheet: unread fehér / read szürke; delete one + clear all (animated)
+- Manager pending: külön ClipboardCheck sheet
+- Actions: `listMyNotifications`, `markNotificationRead`, `deleteMyNotification`, `clearMyNotifications`
+
+## Auth / login UX
+
+- Google OAuth + jelszó/LDAP form
+- Form login: JSON `POST /api/auth/login`, spinner, page exit animation then redirect
+- Components: `login-view.tsx`, `login-form.tsx`, `login-shell.tsx`
+
 ## E-mail
 
 Localhost → `emails/[to].[stamp].txt` via `src/lib/mail.ts`. Gitignore: `/emails`.
@@ -45,8 +57,10 @@ Jóváhagyáskor másolat: `ApprovalNotifyEmail` címek (admin `/beallitasok`). 
 
 ## Kulcs fájlok
 
-- `src/app/actions.ts` — create/review/org/calendar actions
-- `src/lib/data.ts` — shell, balance, lists
+- `src/app/actions.ts` — create/review/org/calendar/notification actions
+- `src/lib/data.ts` — shell, balance, lists, calendar, reports
 - `src/lib/dates.ts` + `work-calendar.ts`
-- `src/components/request-dialog.tsx`, `pending-approvals-panel.tsx`, `work-calendar-admin.tsx`
+- `src/components/request-dialog.tsx`, `review-request-dialog.tsx`, `request-detail-dialog.tsx`
+- `src/components/notifications-panel.tsx`, `pending-approvals-panel.tsx`, `leave-calendar.tsx`
+- `src/components/work-calendar-admin.tsx`
 - `prisma/schema.prisma`
