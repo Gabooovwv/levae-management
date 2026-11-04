@@ -390,6 +390,30 @@ export async function markNotificationRead(id: number): Promise<ActionResult> {
   return { ok: true, message: "Értesítés megjelölve olvasottként." };
 }
 
+export async function clearMyNotifications(): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  const result = await prisma.notification.deleteMany({
+    where: { userId: user.id },
+  });
+  refresh();
+  if (result.count === 0) {
+    return { ok: true, message: "Nincs törölhető értesítés." };
+  }
+  return { ok: true, message: "Az összes értesítés törölve." };
+}
+
+export async function deleteMyNotification(id: number): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  const result = await prisma.notification.deleteMany({
+    where: { id, userId: user.id },
+  });
+  if (result.count === 0) {
+    return { ok: false, message: "Az értesítés nem található." };
+  }
+  refresh();
+  return { ok: true, message: "Értesítés törölve." };
+}
+
 async function requireAdmin() {
   const user = await getCurrentUser();
   if (user.role !== "admin") return null;
