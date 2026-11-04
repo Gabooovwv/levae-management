@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { countWorkdays, toIso, yearOf } from "@/lib/dates";
+import { countWorkdays, formatWorkDays, isWorkday, toIso, yearOf } from "@/lib/dates";
 import { getCurrentUser, sumWorkDays } from "@/lib/data";
 import { inactiveReasonLabel, isInactiveReason } from "@/lib/inactive-reasons";
+import { sendMails } from "@/lib/mail";
+import { loadWorkdayRules } from "@/lib/work-calendar";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -26,19 +28,34 @@ export async function setCompany(companyId: number): Promise<ActionResult> {
 export async function createLeaveRequest(formData: FormData): Promise<ActionResult> {
   const leaveTypeId = Number(formData.get("leaveTypeId"));
   const startDate = String(formData.get("startDate") ?? "");
-  const endDate = String(formData.get("endDate") ?? "");
+  const halfDay = formData.get("halfDay") === "on" || formData.get("halfDay") === "true";
+  const endDateRaw = String(formData.get("endDate") ?? "");
+  const endDate = halfDay ? startDate : endDateRaw;
   const noteRaw = String(formData.get("note") ?? "").trim();
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    return { ok: false, message: "Add meg a kezdőnapot." };
+  }
+  if (!halfDay && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
     return { ok: false, message: "Add meg a kezdő- és az utolsó napot." };
   }
   if (endDate < startDate) {
     return { ok: false, message: "Az utolsó nap nem lehet a kezdőnap előtt." };
   }
 
-  const workDays = countWorkdays(startDate, endDate);
-  if (workDays < 1) {
-    return { ok: false, message: "A kijelölt időszakban nincs munkanap." };
+  const rules = await loadWorkdayRules(startDate, endDate);
+
+  let workDays: number;
+  if (halfDay) {
+    if (!isWorkday(startDate, rules)) {
+      return { ok: false, message: "Fél napot csak munkanapra lehet igényelni." };
+    }
+    workDays = 0.5;
+  } else {
+    workDays = countWorkdays(startDate, endDate, rules);
+    if (workDays < 1) {
+      return { ok: false, message: "A kijelölt időszakban nincs munkanap." };
+    }
   }
 
   const leaveType = await prisma.leaveType.findUnique({ where: { id: leaveTypeId } });
@@ -98,26 +115,69 @@ export async function createLeaveRequest(formData: FormData): Promise<ActionResu
       startDate: start,
       endDate: end,
       workDays,
+      halfDay,
       note: noteRaw || null,
       status: "pending",
     },
   });
 
   const span = startDate === endDate ? startDate : `${startDate} – ${endDate}`;
+  const daysLabel = formatWorkDays(workDays, halfDay);
   await prisma.notification.create({
     data: {
       userId: manager.id,
       requestId: created.id,
       title: `${user.lastName} ${user.firstName}`,
-      detail: `${span} · ${workDays} nap jóváhagyásra vár`,
+      detail: `${span} · ${daysLabel} jóváhagyásra vár`,
       href: "/jovahagyasok",
     },
   });
 
+  const requesterName = `${user.lastName} ${user.firstName}`;
+  const managerName = `${manager.lastName} ${manager.firstName}`;
+  await sendMails([
+    {
+      to: user.email,
+      subject: `Szabadságigényed beérkezett (${span})`,
+      body: [
+        `Szia ${user.firstName}!`,
+        "",
+        `A szabadságigényed rögzítve lett, és elküldtük ${managerName} részére.`,
+        "",
+        `Időszak: ${span}`,
+        `Jogcím: ${leaveType.name}`,
+        `Hossz: ${daysLabel}`,
+        noteRaw ? `Megjegyzés: ${noteRaw}` : null,
+        "",
+        "Az elbírálásról e-mailben értesítünk.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+    {
+      to: manager.email,
+      subject: `Új szabadságigény: ${requesterName} (${span})`,
+      body: [
+        `Szia ${manager.firstName}!`,
+        "",
+        `${requesterName} új szabadságigényt adott le.`,
+        "",
+        `Időszak: ${span}`,
+        `Jogcím: ${leaveType.name}`,
+        `Hossz: ${daysLabel}`,
+        noteRaw ? `Megjegyzés: ${noteRaw}` : null,
+        "",
+        "A szabadságkezelőben a fejléc értesítéseinél bírálhatod el.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ]);
+
   refresh();
   return {
     ok: true,
-    message: `Az igényt elküldtük ${manager.lastName} ${manager.firstName} részére. Ő tudja elfogadni vagy elutasítani.`,
+    message: `Az igényt elküldtük ${managerName} részére. Ő tudja elfogadni vagy elutasítani.`,
   };
 }
 
@@ -180,11 +240,61 @@ export async function reviewLeaveRequest(
     },
   });
 
+  const daysLabel = formatWorkDays(request.workDays, request.halfDay);
+  const decision = status === "approved" ? "jóváhagyta" : "elutasította";
+  await sendMails([
+    {
+      to: request.user.email,
+      subject: `Szabadságigényed ${status === "approved" ? "elfogadva" : "elutasítva"} (${span})`,
+      body: [
+        `Szia ${request.user.firstName}!`,
+        "",
+        `${reviewer.lastName} ${reviewer.firstName} ${decision} a szabadságigényedet.`,
+        "",
+        `Időszak: ${span}`,
+        `Jogcím: ${request.leaveType.name}`,
+        `Hossz: ${daysLabel}`,
+        `Döntés: ${status === "approved" ? "Jóváhagyva" : "Elutasítva"}`,
+        "",
+        "A részleteket a szabadságkezelőben is megtalálod.",
+      ].join("\n"),
+    },
+  ]);
+
   refresh();
   return {
     ok: true,
     message: status === "approved" ? "Az igényt jóváhagytad." : "Az igényt elutasítottad.",
   };
+}
+
+export async function listPendingApprovals() {
+  const reviewer = await getCurrentUser();
+  if (reviewer.role === "admin") return [];
+
+  const rows = await prisma.leaveRequest.findMany({
+    where: {
+      status: "pending",
+      user: { managerId: reviewer.id },
+    },
+    include: {
+      leaveType: true,
+      user: { include: { department: true } },
+    },
+    orderBy: { startDate: "asc" },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    startDate: toIso(row.startDate),
+    endDate: toIso(row.endDate),
+    workDays: row.workDays,
+    halfDay: row.halfDay,
+    typeName: row.leaveType.name,
+    note: row.note,
+    personName: `${row.user.lastName} ${row.user.firstName}`,
+    department: row.user.department.name,
+  }));
 }
 
 async function requireAdmin() {
@@ -736,4 +846,36 @@ export async function deleteStaffRole(id: number): Promise<ActionResult> {
   await prisma.staffRole.delete({ where: { id } });
   refresh();
   return { ok: true, message: `A(z) ${role.name} szerep törölve.` };
+}
+
+export async function setCalendarDay(
+  date: string,
+  kind: "holiday" | "workday" | null,
+): Promise<ActionResult> {
+  const admin = await requireAdmin();
+  if (!admin) return { ok: false, message: "Csak az admin állíthatja a munkarendet." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, message: "Érvénytelen dátum." };
+  }
+
+  const day = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(day.getTime()) || toIso(day) !== date) {
+    return { ok: false, message: "Érvénytelen dátum." };
+  }
+
+  if (kind === null) {
+    await prisma.calendarDay.deleteMany({ where: { date: day } });
+    refresh();
+    return { ok: true, message: `${date}: alapértelmezett nap.` };
+  }
+
+  await prisma.calendarDay.upsert({
+    where: { date: day },
+    create: { date: day, kind },
+    update: { kind, note: null },
+  });
+
+  refresh();
+  const label = kind === "holiday" ? "munkaszüneti nap" : "áthelyezett munkanap";
+  return { ok: true, message: `${date}: ${label}.` };
 }

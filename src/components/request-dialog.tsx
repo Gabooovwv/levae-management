@@ -24,32 +24,70 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDayCount } from "@/lib/dates";
 
 export function RequestDialog({
   types,
   today,
+  availableDays,
+  pendingDays = 0,
 }: {
   types: { id: number; name: string }[];
   today: string;
+  availableDays: number;
+  pendingDays?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [typeId, setTypeId] = useState(String(types[0]?.id ?? ""));
+  const [halfDay, setHalfDay] = useState(false);
   const [pending, startTransition] = useTransition();
 
+  const bookableDays = Math.max(availableDays - pendingDays, 0);
+  const canRequest = bookableDays >= 0.5;
+
   function onSubmit(formData: FormData) {
+    if (halfDay) {
+      formData.set("halfDay", "true");
+      const start = String(formData.get("startDate") ?? "");
+      formData.set("endDate", start);
+    }
     startTransition(async () => {
       const result = await createLeaveRequest(formData);
       if (result.ok) {
         toast.success(result.message);
         setOpen(false);
+        setHalfDay(false);
         return;
       }
       toast.error(result.message);
     });
   }
 
+  if (!canRequest) {
+    return (
+      <Button
+        disabled
+        className="h-12 px-5 text-sm font-semibold"
+        title={
+          availableDays < 0.5
+            ? "Nincs több kiadható szabadnapod"
+            : `A függő igényeid miatt nincs több kivehető nap (még ${formatDayCount(bookableDays)} nap)`
+        }
+      >
+        <Plus />
+        Új szabadságigény
+      </Button>
+    );
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setHalfDay(false);
+      }}
+    >
       <DialogTrigger
         render={
           <Button className="h-12 px-5 text-sm font-semibold hover:bg-[#477bf3]" />
@@ -62,7 +100,8 @@ export function RequestDialog({
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold tracking-tight">Új szabadságigény</DialogTitle>
           <DialogDescription>
-            A kérelmet a felettesed kapja meg, és ő fogadja el vagy utasítja el.
+            A kérelmet a felettesed kapja meg, és ő fogadja el vagy utasítja el. Még{" "}
+            {formatDayCount(bookableDays)} nap igényelhető.
           </DialogDescription>
         </DialogHeader>
         <form action={onSubmit} className="grid gap-3">
@@ -86,9 +125,29 @@ export function RequestDialog({
             <Label htmlFor="startDate">Kezdőnap</Label>
             <Input id="startDate" name="startDate" type="date" required min={today} />
           </div>
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#eaeaf0] bg-[#f4f5f7] px-3 py-3 text-sm font-semibold text-[#555885]">
+            <input
+              type="checkbox"
+              name="halfDay"
+              checked={halfDay}
+              onChange={(event) => setHalfDay(event.target.checked)}
+              className="size-4 rounded border-[#d4d5e1] accent-primary"
+            />
+            Fél nap
+          </label>
           <div className="grid gap-1.5">
-            <Label htmlFor="endDate">Utolsó nap</Label>
-            <Input id="endDate" name="endDate" type="date" required min={today} />
+            <Label htmlFor="endDate" className={halfDay ? "text-muted-foreground" : undefined}>
+              Utolsó nap
+            </Label>
+            <Input
+              id="endDate"
+              name="endDate"
+              type="date"
+              required={!halfDay}
+              min={today}
+              disabled={halfDay}
+              className={halfDay ? "bg-muted opacity-60" : undefined}
+            />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="note">

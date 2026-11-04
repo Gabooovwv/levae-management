@@ -12,6 +12,8 @@ const errors: Record<string, string> = {
   ldap_unavailable: "Az LDAP szerver most nem érhető el.",
   google_config: "A Google belépés még nincs beállítva.",
   google_failed: "A Google belépés nem sikerült. Próbáld újra.",
+  google_not_registered:
+    "Ez a Google-fiók nincs regisztrálva a szabadságkezelőben. Csak a rendszerben lévő e-mail címmel lehet belépni.",
   not_found: "Ehhez a fiókhoz nincs szabadságkezelő felhasználó. Szólj a HR-nek.",
   inactive: "Ez a fiók passzív. A belépéshez szólj a HR-nek vagy az adminnak.",
 };
@@ -127,7 +129,8 @@ export default async function LoginPage({
         <div className="w-full max-w-[420px] rounded-2xl bg-white px-7 py-8 text-[#2a2e67] shadow-[0_24px_60px_rgba(22,23,41,0.28)]">
           <h2 className="text-2xl font-semibold tracking-tight">Jelentkezz be</h2>
           <p className="mt-2 text-sm leading-6 text-[#555885]">
-            Google-fiókkal vagy a vállalati azonosítóddal és jelszavaddal léphetsz be.
+            Google-fiókkal vagy a vállalati azonosítóddal léphetsz be. Csak olyan e-mail címmel
+            működik, amit az admin már felvett a rendszerbe.
           </p>
           {message ? (
             <p className="mt-5 rounded-lg bg-[#fdecec] px-3 py-2 text-sm text-[#d81c1c]" role="alert">
@@ -151,7 +154,7 @@ export default async function LoginPage({
           </div>
           <LoginForm />
           <p className="mt-6 text-xs leading-5 text-[#555885]">
-            A fiókot a HR rögzíti. A belépés a virgo.hu arculatú vállalati azonosítással történik.
+            Új fiókot itt nem lehet létrehozni. Ha nem tudsz belépni, szólj a HR-nek vagy az adminnak.
           </p>
         </div>
       </section>

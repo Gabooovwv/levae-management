@@ -1,4 +1,15 @@
-export const HOLIDAYS = new Set([
+export type WorkdayRules = {
+  holidays: ReadonlySet<string>;
+  workdays: ReadonlySet<string>;
+};
+
+export const EMPTY_WORKDAY_RULES: WorkdayRules = {
+  holidays: new Set(),
+  workdays: new Set(),
+};
+
+/** Alapértelmezett 2026-os magyar munkaszüneti napok (seed / fallback). */
+export const DEFAULT_HOLIDAYS_2026 = [
   "2026-01-01",
   "2026-03-15",
   "2026-04-03",
@@ -10,7 +21,7 @@ export const HOLIDAYS = new Set([
   "2026-11-01",
   "2026-12-25",
   "2026-12-26",
-]);
+] as const;
 
 const MONTHS = [
   "január",
@@ -84,18 +95,44 @@ export function eachDay(start: string, end: string) {
   return days;
 }
 
-export function isWorkday(iso: string) {
+/**
+ * Munkanap-e a nap.
+ * - hétvége: nem, kivéve ha áthelyezett munkanap
+ * - munkaszüneti nap: nem
+ * - hétköznap: igen, ha nincs ünnepként megjelölve
+ */
+export function isWorkday(iso: string, rules: WorkdayRules = EMPTY_WORKDAY_RULES) {
+  if (rules.workdays.has(iso)) return true;
+  if (rules.holidays.has(iso)) return false;
   const day = new Date(`${iso}T00:00:00.000Z`).getUTCDay();
-  if (day === 0 || day === 6) return false;
-  return !HOLIDAYS.has(iso);
+  return day !== 0 && day !== 6;
 }
 
-export function countWorkdays(start: string, end: string) {
-  return eachDay(start, end).filter(isWorkday).length;
+export function countWorkdays(
+  start: string,
+  end: string,
+  rules: WorkdayRules = EMPTY_WORKDAY_RULES,
+) {
+  return eachDay(start, end).filter((day) => isWorkday(day, rules)).length;
 }
 
-export function workdaysOf(start: string, end: string) {
-  return eachDay(start, end).filter(isWorkday);
+export function formatWorkDays(days: number, halfDay = false) {
+  if (halfDay || days === 0.5) return "fél nap";
+  if (Number.isInteger(days)) return `${days} nap`;
+  return `${String(days).replace(".", ",")} nap`;
+}
+
+export function formatDayCount(days: number) {
+  if (Number.isInteger(days)) return String(days);
+  return String(days).replace(".", ",");
+}
+
+export function workdaysOf(
+  start: string,
+  end: string,
+  rules: WorkdayRules = EMPTY_WORKDAY_RULES,
+) {
+  return eachDay(start, end).filter((day) => isWorkday(day, rules));
 }
 
 export function capitalize(value: string) {
@@ -143,4 +180,20 @@ export function monthIndex(iso: string) {
 export function weekdayMonFirst(iso: string) {
   const day = new Date(`${iso}T00:00:00.000Z`).getUTCDay();
   return WEEKDAYS_SHORT[day];
+}
+
+/** Hétfővel kezdődő hónaprács cellái (null = üres). */
+export function monthGrid(year: number, monthIndex: number) {
+  const first = new Date(Date.UTC(year, monthIndex, 1));
+  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const mondayBased = (first.getUTCDay() + 6) % 7;
+  const cells: (string | null)[] = [];
+  for (let i = 0; i < mondayBased; i += 1) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const m = String(monthIndex + 1).padStart(2, "0");
+    const d = String(day).padStart(2, "0");
+    cells.push(`${year}-${m}-${d}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
 }

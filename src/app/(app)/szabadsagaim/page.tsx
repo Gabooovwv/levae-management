@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { RequestDialog } from "@/components/request-dialog";
 import { RequestsTable } from "@/components/requests-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { todayIso } from "@/lib/dates";
+import { formatDayCount, todayIso } from "@/lib/dates";
 import { getBalance, getCurrentUser, getLeaveTypes, getMyRequests, markNotificationsRead } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
@@ -38,11 +38,17 @@ export default async function MyLeavePage({
           <p className="text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">Saját keret</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">Szabadságaim</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {balance.availableDays} nap még felhasználható a {balance.totalDays} napos keretből.{" "}
-            {balance.pendingDays} nap elbírálás alatt.
+            {formatDayCount(balance.availableDays)} nap még felhasználható a{" "}
+            {formatDayCount(balance.totalDays)} napos keretből. {formatDayCount(balance.pendingDays)} nap
+            elbírálás alatt.
           </p>
         </div>
-        <RequestDialog types={types} today={todayIso()} />
+        <RequestDialog
+          types={types}
+          today={todayIso()}
+          availableDays={balance.availableDays}
+          pendingDays={balance.pendingDays}
+        />
       </section>
       <Card className="gap-0 py-0 shadow-[0_12px_35px_rgba(42,46,103,0.04)] ring-border">
         <CardHeader className="border-b">

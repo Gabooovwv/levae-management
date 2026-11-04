@@ -11,6 +11,7 @@ import {
   yearOf,
 } from "./dates";
 import type { BalanceSnapshot, RequestRow, ShellData } from "./types";
+import { loadWorkdayRules, loadWorkdayRulesForYear } from "./work-calendar";
 
 const requestInclude = {
   leaveType: true,
@@ -23,6 +24,7 @@ type RequestRecord = {
   startDate: Date;
   endDate: Date;
   workDays: number;
+  halfDay: boolean;
   note: string | null;
   status: "pending" | "approved" | "rejected";
   leaveType: { name: string; deductsBalance: boolean };
@@ -40,6 +42,7 @@ function mapRequest(row: RequestRecord): RequestRow {
     startDate: toIso(row.startDate),
     endDate: toIso(row.endDate),
     workDays: row.workDays,
+    halfDay: row.halfDay,
     typeName: row.leaveType.name,
     deductsBalance: row.leaveType.deductsBalance,
     status: row.status,
@@ -113,19 +116,25 @@ export async function getBalance(
         lt: new Date(`${year + 1}-01-01T00:00:00.000Z`),
       },
     },
-    select: { startDate: true, endDate: true },
+    select: { startDate: true, endDate: true, workDays: true },
   });
 
+  const rules = await loadWorkdayRulesForYear(year);
   const usedByQuarter: [number, number, number, number] = [0, 0, 0, 0];
+  let usedDays = 0;
   for (const request of requests) {
-    for (const day of workdaysOf(toIso(request.startDate), toIso(request.endDate))) {
-      if (yearOf(day) !== year) continue;
-      usedByQuarter[quarterIndex(day)] += 1;
+    usedDays += request.workDays;
+    const days = workdaysOf(toIso(request.startDate), toIso(request.endDate), rules).filter(
+      (day) => yearOf(day) === year,
+    );
+    if (days.length === 0) continue;
+    const perDay = request.workDays / days.length;
+    for (const day of days) {
+      usedByQuarter[quarterIndex(day)] += perDay;
     }
   }
 
   const totalDays = balance?.totalDays ?? 0;
-  const usedDays = usedByQuarter.reduce((sum, days) => sum + days, 0);
   const pendingDays = await sumWorkDays(userId, year, "pending");
 
   return {
@@ -240,9 +249,9 @@ export async function getDashboard(userId: number, companyId: number) {
   const team = await prisma.leaveRequest.findMany({
     where: {
       companyId,
-      userId: { not: userId },
       status: { in: ["approved", "pending"] },
       endDate: { gte: new Date(`${today}T00:00:00.000Z`) },
+      user: { managerId: userId },
     },
     include: requestInclude,
     orderBy: { startDate: "asc" },
@@ -281,8 +290,9 @@ export async function getCalendarEvents(
     name: string;
   }[] = [];
 
+  const rules = await loadWorkdayRulesForYear(year);
   for (const row of rows) {
-    for (const date of workdaysOf(toIso(row.startDate), toIso(row.endDate))) {
+    for (const date of workdaysOf(toIso(row.startDate), toIso(row.endDate), rules)) {
       if (yearOf(date) !== year) continue;
       events.push({
         date,
@@ -400,6 +410,7 @@ export async function getReport(companyId: number) {
 
   const types = new Map<string, { name: string; days: number; count: number }>();
   const months = Array.from({ length: 12 }, () => 0);
+  const rules = await loadWorkdayRulesForYear(year);
 
   for (const request of requests) {
     const type = types.get(request.leaveType.name) ?? {
@@ -421,7 +432,7 @@ export async function getReport(companyId: number) {
     }
 
     if (request.status === "approved" && request.leaveType.deductsBalance) {
-      for (const day of workdaysOf(toIso(request.startDate), toIso(request.endDate))) {
+      for (const day of workdaysOf(toIso(request.startDate), toIso(request.endDate), rules)) {
         if (yearOf(day) === year) months[monthIndex(day)] += 1;
       }
     }

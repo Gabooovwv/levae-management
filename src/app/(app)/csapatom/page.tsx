@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { StatusBadge } from "@/components/status-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatRange } from "@/lib/dates";
+import { formatDayCount, formatRange, formatWorkDays } from "@/lib/dates";
 import { getCurrentUser, getSelectedCompanyId, getTeam } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 
@@ -49,8 +49,10 @@ export default async function TeamPage() {
               <div className="flex items-end justify-between">
                 <p className="text-sm text-muted-foreground">Felhasználható keret</p>
                 <p className="text-2xl font-semibold tracking-tight">
-                  {person.balance.availableDays}
-                  <span className="ml-1 text-xs font-semibold text-[#aaabc2]">/ {person.balance.totalDays} nap</span>
+                  {formatDayCount(person.balance.availableDays)}
+                  <span className="ml-1 text-xs font-semibold text-[#aaabc2]">
+                    / {formatDayCount(person.balance.totalDays)} nap
+                  </span>
                 </p>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-[#eaeaf0]">
@@ -65,7 +67,9 @@ export default async function TeamPage() {
                 <div className="flex items-center justify-between rounded-lg bg-[#f4f5f7] px-3 py-2">
                   <div>
                     <p className="text-sm font-semibold">{formatRange(person.next.startDate, person.next.endDate)}</p>
-                    <p className="text-xs text-muted-foreground">{person.next.workDays} munkanap</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatWorkDays(person.next.workDays, person.next.halfDay)}
+                    </p>
                   </div>
                   <StatusBadge status={person.next.status} />
                 </div>

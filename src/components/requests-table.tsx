@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatRange, yearOf } from "@/lib/dates";
+import { formatRange, formatWorkDays, yearOf } from "@/lib/dates";
 import type { RequestRow } from "@/lib/types";
 
 export function RequestsTable({
@@ -54,7 +54,7 @@ export function RequestsTable({
                 <span className="block font-semibold">{formatRange(row.startDate, row.endDate)}</span>
                 <span className="text-xs text-muted-foreground">{yearOf(row.startDate)}</span>
               </TableCell>
-              <TableCell>{row.workDays} nap</TableCell>
+              <TableCell>{formatWorkDays(row.workDays, row.halfDay)}</TableCell>
               <TableCell>{row.typeName}</TableCell>
               <TableCell>
                 <StatusBadge status={row.status} />

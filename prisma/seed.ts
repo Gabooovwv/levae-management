@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
-import { countWorkdays, toIso } from "../src/lib/dates";
+import { countWorkdays, DEFAULT_HOLIDAYS_2026, toIso } from "../src/lib/dates";
 import { hashPassword } from "../src/lib/password";
+import { loadWorkdayRulesForYear } from "../src/lib/work-calendar";
 
 async function main() {
   await prisma.notification.deleteMany();
@@ -14,6 +15,15 @@ async function main() {
   await prisma.staffRole.deleteMany();
   await prisma.department.deleteMany();
   await prisma.company.deleteMany();
+  await prisma.calendarDay.deleteMany();
+
+  await prisma.calendarDay.createMany({
+    data: DEFAULT_HOLIDAYS_2026.map((date) => ({
+      date: new Date(`${date}T00:00:00.000Z`),
+      kind: "holiday" as const,
+    })),
+  });
+  const workRules = await loadWorkdayRulesForYear(2026);
 
   const kft = await prisma.company.create({ data: { name: "Virgo Kft." } });
   const zrt = await prisma.company.create({ data: { name: "Virgo Zrt." } });
@@ -246,7 +256,7 @@ async function main() {
         leaveTypeId: base.id,
         startDate: new Date(`${input.start}T00:00:00.000Z`),
         endDate: new Date(`${input.end}T00:00:00.000Z`),
-        workDays: countWorkdays(input.start, input.end),
+        workDays: countWorkdays(input.start, input.end, workRules),
         note: input.note,
         status: input.status,
         reviewerId: input.status === "pending" ? null : (input.reviewerId ?? peter.id),

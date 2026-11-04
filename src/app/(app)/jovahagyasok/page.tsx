@@ -2,10 +2,17 @@ import { redirect } from "next/navigation";
 import { RequestsTable } from "@/components/requests-table";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getApprovals, getCurrentUser, getSelectedCompanyId } from "@/lib/data";
+import { prisma } from "@/lib/prisma";
 
 export default async function ApprovalsPage() {
   const user = await getCurrentUser();
   if (user.role === "admin") redirect("/");
+
+  const reportCount = await prisma.user.count({
+    where: { managerId: user.id, role: { not: "admin" } },
+  });
+  if (reportCount === 0) redirect("/");
+
   const companyId = await getSelectedCompanyId(user.companyId);
   const { pending, history } = await getApprovals(user.id, companyId);
 

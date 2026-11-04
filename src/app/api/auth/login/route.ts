@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { authenticateLdap, LdapConfigError } from "@/lib/ldap";
 import { verifyPassword } from "@/lib/password";
 import { setSession } from "@/lib/session";
+import { findRegisteredUserByEmail } from "@/lib/users";
 
 function fail(origin: string, code: string) {
   return NextResponse.redirect(new URL(`/login?error=${code}`, origin), 303);
@@ -18,12 +18,7 @@ export async function POST(request: Request) {
 
   try {
     const emailGuess = username.includes("@") ? username.toLowerCase() : null;
-    const localUser = emailGuess
-      ? await prisma.user.findFirst({
-          where: { email: emailGuess },
-          select: { id: true, passwordHash: true, active: true },
-        })
-      : null;
+    const localUser = emailGuess ? await findRegisteredUserByEmail(emailGuess) : null;
 
     if (localUser?.passwordHash) {
       if (!(await verifyPassword(password, localUser.passwordHash))) {
@@ -48,10 +43,8 @@ export async function POST(request: Request) {
 
     if (!email) return fail(origin, "login_failed");
 
-    const user = await prisma.user.findFirst({
-      where: { email },
-      select: { id: true, passwordHash: true, active: true },
-    });
+    // LDAP success still requires an existing employee record in the app.
+    const user = await findRegisteredUserByEmail(email);
     if (!user) return fail(origin, "not_found");
     if (user.passwordHash) return fail(origin, "login_failed");
     if (!user.active) return fail(origin, "inactive");

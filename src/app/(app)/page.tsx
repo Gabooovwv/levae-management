@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   BarChart3,
   CalendarClock,
+  CalendarDays,
   Check,
   Hourglass,
   Network,
@@ -13,8 +14,9 @@ import { RequestsTable } from "@/components/requests-table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { QUARTER_META, formatRange, weekdayName } from "@/lib/dates";
+import { QUARTER_META, formatDayCount, formatRange, formatWorkDays, weekdayName } from "@/lib/dates";
 import { getCurrentUser, getDashboard, getLeaveTypes, getSelectedCompanyId } from "@/lib/data";
+import { prisma } from "@/lib/prisma";
 
 const tones = [
   "bg-[#e8effd] text-primary",
@@ -29,6 +31,12 @@ const adminLinks = [
     title: "Dolgozók",
     description: "Szervezeti fa, beosztások, részlegek és szerepek kezelése.",
     icon: Network,
+  },
+  {
+    href: "/munkarend",
+    title: "Munkarend",
+    description: "Éves munkaszüneti napok és áthelyezett munkanapok beállítása.",
+    icon: CalendarDays,
   },
   {
     href: "/riportok",
@@ -81,10 +89,14 @@ export default async function HomePage() {
   }
 
   const companyId = await getSelectedCompanyId(user.companyId);
-  const [dashboard, types] = await Promise.all([
+  const [dashboard, types, reportCount] = await Promise.all([
     getDashboard(user.id, companyId),
     getLeaveTypes(),
+    prisma.user.count({
+      where: { managerId: user.id, role: { not: "admin" } },
+    }),
   ]);
+  const hasDirectReports = reportCount > 0;
   const { balance } = dashboard;
   const usedRatio = balance.totalDays ? Math.round((balance.usedDays / balance.totalDays) * 100) : 0;
   const availableRatio = balance.totalDays
@@ -104,7 +116,12 @@ export default async function HomePage() {
             Itt találod a szabadságaid és a közelgő távolléteid összefoglalóját.
           </p>
         </div>
-        <RequestDialog types={types} today={dashboard.today} />
+        <RequestDialog
+          types={types}
+          today={dashboard.today}
+          availableDays={balance.availableDays}
+          pendingDays={balance.pendingDays}
+        />
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -112,7 +129,7 @@ export default async function HomePage() {
           label="Éves szabadságkeret"
           icon={<CalendarClock className="size-4" />}
           tone={tones[0]}
-          value={String(balance.totalDays)}
+          value={formatDayCount(balance.totalDays)}
           unit="nap"
           foot="Teljes éves keret"
         />
@@ -120,7 +137,7 @@ export default async function HomePage() {
           label="Felhasználható"
           icon={<Check className="size-4" />}
           tone={tones[1]}
-          value={String(balance.availableDays)}
+          value={formatDayCount(balance.availableDays)}
           unit="nap"
           foot={<span className="font-semibold text-[#08784c]">{availableRatio}% még rendelkezésre áll</span>}
         />
@@ -139,7 +156,7 @@ export default async function HomePage() {
           value={dashboard.nextAbsence ? formatRange(dashboard.nextAbsence.startDate, dashboard.nextAbsence.startDate) : "—"}
           foot={
             dashboard.nextAbsence
-              ? `${weekdayName(dashboard.nextAbsence.startDate)} · ${dashboard.nextAbsence.workDays} munkanap`
+              ? `${weekdayName(dashboard.nextAbsence.startDate)} · ${formatWorkDays(dashboard.nextAbsence.workDays, dashboard.nextAbsence.halfDay)}`
               : "Nincs közelgő távollét"
           }
         />
@@ -162,19 +179,22 @@ export default async function HomePage() {
                 <div>
                   <p className="text-sm font-semibold">Felhasznált szabadság</p>
                   <p className="text-xs text-muted-foreground">
-                    {balance.usedDays} nap a {balance.totalDays} napos éves keretből
+                    {formatDayCount(balance.usedDays)} nap a {formatDayCount(balance.totalDays)} napos éves
+                    keretből
                   </p>
                 </div>
                 <p className="text-2xl font-semibold tracking-tight">
-                  {balance.availableDays}{" "}
-                  <span className="text-xs font-semibold text-muted-foreground">/ {balance.totalDays} nap</span>
+                  {formatDayCount(balance.availableDays)}{" "}
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    / {formatDayCount(balance.totalDays)} nap
+                  </span>
                 </p>
               </div>
               <Progress value={usedRatio} />
               <div className="flex justify-between text-[11px] text-[#aaabc2]">
                 <span>0 nap</span>
                 <span>{usedRatio}% felhasználva</span>
-                <span>{balance.totalDays} nap</span>
+                <span>{formatDayCount(balance.totalDays)} nap</span>
               </div>
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                 {QUARTER_META.map((quarter) => {
@@ -185,7 +205,7 @@ export default async function HomePage() {
                     <div key={quarter.label} className="rounded-lg border border-[#eeeff5] bg-[#fafaff] p-3">
                       <p className="text-[10px] font-semibold text-muted-foreground">{quarter.label}</p>
                       <p className="mt-1 text-lg font-semibold">
-                        {used} / {quota}
+                        {formatDayCount(used)} / {formatDayCount(quota)}
                       </p>
                       <p className="text-[10px] text-[#aaabc2]">nap felhasználva</p>
                       <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#e8eaf5]">
@@ -233,40 +253,44 @@ export default async function HomePage() {
             </CardContent>
           </Card>
 
-          <Card className="gap-0 py-0 shadow-[0_12px_35px_rgba(42,46,103,0.04)] ring-border">
-            <CardHeader className="border-b">
-              <CardTitle>Csapatom távollétei</CardTitle>
-              <CardDescription>Közelgő távollétek</CardDescription>
-              <CardAction>
-                <Link href="/csapatom" className="text-xs font-semibold text-primary">
-                  Összes
-                </Link>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="py-2">
-              {dashboard.team.length === 0 ? (
-                <p className="py-6 text-sm text-muted-foreground">Nincs közelgő csapattávollét.</p>
-              ) : (
-                dashboard.team.map((person) => (
-                  <div key={person.id} className="flex items-center gap-3 border-b border-border py-3 last:border-0">
-                    <Avatar className="rounded-lg">
-                      <AvatarFallback className="rounded-lg bg-[#e8effd] text-xs font-semibold text-primary">
-                        {person.initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{person.personName}</p>
-                      <p className="text-xs text-muted-foreground">{person.department}</p>
+          {hasDirectReports ? (
+            <Card className="gap-0 py-0 shadow-[0_12px_35px_rgba(42,46,103,0.04)] ring-border">
+              <CardHeader className="border-b">
+                <CardTitle>Csapatom távollétei</CardTitle>
+                <CardDescription>Közelgő távollétek</CardDescription>
+                <CardAction>
+                  <Link href="/csapatom" className="text-xs font-semibold text-primary">
+                    Összes
+                  </Link>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="py-2">
+                {dashboard.team.length === 0 ? (
+                  <p className="py-6 text-sm text-muted-foreground">Nincs közelgő csapattávollét.</p>
+                ) : (
+                  dashboard.team.map((person) => (
+                    <div key={person.id} className="flex items-center gap-3 border-b border-border py-3 last:border-0">
+                      <Avatar className="rounded-lg">
+                        <AvatarFallback className="rounded-lg bg-[#e8effd] text-xs font-semibold text-primary">
+                          {person.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">{person.personName}</p>
+                        <p className="text-xs text-muted-foreground">{person.department}</p>
+                      </div>
+                      <div className="text-right text-xs text-muted-foreground">
+                        <p className="font-semibold text-[#08784c]">
+                          {formatRange(person.startDate, person.endDate)}
+                        </p>
+                        <p>{formatWorkDays(person.workDays, person.halfDay)}</p>
+                      </div>
                     </div>
-                    <div className="text-right text-xs text-muted-foreground">
-                      <p className="font-semibold text-[#08784c]">{formatRange(person.startDate, person.endDate)}</p>
-                      <p>{person.workDays} nap</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
 
           <Card className="gap-0 bg-[#fff8ee] py-0 ring-[#f3e2c4] md:col-span-2 xl:col-span-1">
             <CardContent className="flex gap-3 py-4">

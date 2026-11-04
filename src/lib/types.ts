@@ -5,6 +5,7 @@ export type RequestRow = {
   startDate: string;
   endDate: string;
   workDays: number;
+  halfDay: boolean;
   typeName: string;
   deductsBalance: boolean;
   status: LeaveStatus;

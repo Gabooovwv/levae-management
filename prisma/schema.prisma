@@ -20,6 +20,11 @@ enum LeaveStatus {
   rejected
 }
 
+enum CalendarDayKind {
+  holiday
+  workday
+}
+
 model Company {
   id        Int            @id @default(autoincrement())
   name      String         @db.VarChar(120)
@@ -105,7 +110,8 @@ model LeaveRequest {
   leaveType   LeaveType   @relation(fields: [leaveTypeId], references: [id])
   startDate   DateTime    @db.Date
   endDate     DateTime    @db.Date
-  workDays    Int
+  workDays    Float
+  halfDay     Boolean     @default(false)
   note        String?     @db.Text
   status      LeaveStatus
   reviewerId  Int?
@@ -132,4 +138,11 @@ model Notification {
   createdAt DateTime      @default(now())
 
   @@index([userId, readAt])
+}
+
+model CalendarDay {
+  id   Int             @id @default(autoincrement())
+  date DateTime        @unique @db.Date
+  kind CalendarDayKind
+  note String?         @db.VarChar(160)
 }

@@ -1,11 +1,19 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import {
+  googleAuthConfigured,
+  googleCallbackUrl,
+  googleClientId,
+  googleClientSecret,
+  googleHostedDomain,
+} from "@/lib/google-auth";
 import { setSession } from "@/lib/session";
+import { findRegisteredUserByEmail } from "@/lib/users";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const fail = (code: string) => NextResponse.redirect(new URL(`/login?error=${code}`, url.origin));
+  const origin = url.origin;
+  const fail = (code: string) => NextResponse.redirect(new URL(`/login?error=${code}`, origin));
 
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -14,21 +22,25 @@ export async function GET(request: Request) {
   jar.delete("virgo_google_state");
 
   if (!code || !state || !saved || state !== saved) return fail("google_failed");
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return fail("google_config");
+  if (!googleAuthConfigured()) return fail("google_config");
 
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: process.env.GOOGLE_CLIENT_ID,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: `${url.origin}/api/auth/google/callback`,
+      client_id: googleClientId(),
+      client_secret: googleClientSecret(),
+      redirect_uri: googleCallbackUrl(request.url),
       grant_type: "authorization_code",
     }),
   });
 
-  if (!tokenResponse.ok) return fail("google_failed");
+  if (!tokenResponse.ok) {
+    console.error("google token exchange failed", await tokenResponse.text());
+    return fail("google_failed");
+  }
+
   const token = (await tokenResponse.json()) as { access_token?: string };
   if (!token.access_token) return fail("google_failed");
 
@@ -37,16 +49,27 @@ export async function GET(request: Request) {
   });
   if (!profileResponse.ok) return fail("google_failed");
 
-  const profile = (await profileResponse.json()) as { email?: string; email_verified?: boolean };
+  const profile = (await profileResponse.json()) as {
+    email?: string;
+    email_verified?: boolean;
+    hd?: string;
+  };
   if (!profile.email || profile.email_verified === false) return fail("google_failed");
 
-  const user = await prisma.user.findFirst({
-    where: { email: profile.email },
-    select: { id: true, active: true },
-  });
-  if (!user) return fail("not_found");
+  const hostedDomain = googleHostedDomain();
+  if (hostedDomain) {
+    const emailDomain = profile.email.split("@")[1]?.toLowerCase();
+    const profileHd = profile.hd?.toLowerCase();
+    if (emailDomain !== hostedDomain.toLowerCase() && profileHd !== hostedDomain.toLowerCase()) {
+      return fail("google_failed");
+    }
+  }
+
+  // Only users already provisioned in the app may sign in — never auto-create.
+  const user = await findRegisteredUserByEmail(profile.email);
+  if (!user) return fail("google_not_registered");
   if (!user.active) return fail("inactive");
 
   await setSession(user.id);
-  return NextResponse.redirect(new URL("/", url.origin));
+  return NextResponse.redirect(new URL("/", origin));
 }

@@ -35,6 +35,9 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# local email outbox logs
+/emails
+
 # prisma client
 /src/generated
 
