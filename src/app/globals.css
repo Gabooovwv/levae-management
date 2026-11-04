@@ -128,3 +128,29 @@
     @apply font-sans;
   }
 }
+
+@keyframes login-orb-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(10px, -14px);
+  }
+}
+
+.login-orb {
+  animation: login-orb-drift 9s ease-in-out infinite;
+}
+
+.login-orb-slow {
+  animation: login-orb-drift 12s ease-in-out infinite reverse;
+  animation-delay: -3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-orb,
+  .login-orb-slow {
+    animation: none;
+  }
+}
