@@ -1,0 +1,14 @@
+---
+description: Szabadság Server Actions és keret/munkanap szabályok módosításakor
+globs: src/app/actions.ts,src/lib/data.ts,src/lib/dates.ts,src/lib/work-calendar.ts,src/lib/mail.ts
+alwaysApply: false
+---
+
+# Leave actions / data
+
+- `createLeaveRequest` / `reviewLeaveRequest`: mindig `loadWorkdayRules` a dátumtartományra; ne hardcodeolt HOLIDAYS.
+- Fél nap: csak munkanapon; endDate = startDate.
+- Keret: `sumWorkDays` approved + pending + új ≤ total (ha `deductsBalance`).
+- Mail: `sendMails` / `sendMail` — fájllog, ne SMTP localhoston.
+- `getBalance.availableDays` = total − approved workDays (float, fél nap is).
+- UI gomb disable: bookable = available − pending; ha `< 0.5`, inaktív (`RequestDialog`).

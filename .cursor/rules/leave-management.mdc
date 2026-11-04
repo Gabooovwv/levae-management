@@ -1,0 +1,31 @@
+---
+description: Virgo szabadságkezelő termékdomain, szerepkörök és invariánsok
+alwaysApply: true
+---
+
+# Virgo leave-management
+
+Next.js szabadságkezelő (HU UI). Teljes leírás: `README.md`, agent összefoglaló: `AGENTS.md`.
+
+## Szerepek
+
+- **admin**: `/szervezet`, `/munkarend`, `/beallitasok`, riportok. Nincs saját szabadságigény, nincs Csapatom/Jóváhagyások.
+- Jóváhagyáskor a `/beallitasok` extra e-mailjei (`ApprovalNotifyEmail`) is kapnak másolatot; elutasításkor nem.
+- **employee/manager/hr**: áttekintés, szabadságaim, naptár, riportok.
+- Csapatom / jóváhagyás / fejléc pending badge: csak ha van közvetlen beosztott (`User.managerId` → ő), nem a `role` alapján.
+
+## Szabadság invariánsok
+
+- `workDays` float; fél nap: `halfDay=true`, `workDays=0.5`, endDate = startDate.
+- Hossz: csak **munkanapok** (`isWorkday` + `CalendarDay` holiday/workday).
+- Kiadható = `totalDays −` jóváhagyott, `deductsBalance` jogcímek. Függő is beleszámít az új igény keretellenőrzésébe.
+- Nincs felettes → igény nem adható le. Átfedő pending/approved időszak tilos.
+- Új igény → e-mail dolgozó+felettes; döntés → e-mail dolgozónak. Localhost: `emails/*.txt` (gitignore).
+
+## Hol keress
+
+- Actions: `src/app/actions.ts`
+- Queries: `src/lib/data.ts`
+- Munkanap: `src/lib/dates.ts`, `src/lib/work-calendar.ts`
+- Mail: `src/lib/mail.ts`
+- Séma: `prisma/schema.prisma`

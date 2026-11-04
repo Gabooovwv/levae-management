@@ -40,10 +40,26 @@ export function RequestDialog({
   const [open, setOpen] = useState(false);
   const [typeId, setTypeId] = useState(String(types[0]?.id ?? ""));
   const [halfDay, setHalfDay] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [pending, startTransition] = useTransition();
 
   const bookableDays = Math.max(availableDays - pendingDays, 0);
   const canRequest = bookableDays >= 0.5;
+  const endMin = startDate || today;
+
+  function resetForm() {
+    setHalfDay(false);
+    setStartDate("");
+    setEndDate("");
+  }
+
+  function onStartDateChange(value: string) {
+    setStartDate(value);
+    // Az utolsó nap naptára a kezdőnaptól nyíljon; ha üres vagy korábbi, igazítsuk.
+    if (!value) return;
+    if (!endDate || endDate < value) setEndDate(value);
+  }
 
   function onSubmit(formData: FormData) {
     if (halfDay) {
@@ -56,7 +72,7 @@ export function RequestDialog({
       if (result.ok) {
         toast.success(result.message);
         setOpen(false);
-        setHalfDay(false);
+        resetForm();
         return;
       }
       toast.error(result.message);
@@ -85,7 +101,7 @@ export function RequestDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setHalfDay(false);
+        if (!next) resetForm();
       }}
     >
       <DialogTrigger
@@ -123,7 +139,15 @@ export function RequestDialog({
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="startDate">Kezdőnap</Label>
-            <Input id="startDate" name="startDate" type="date" required min={today} />
+            <Input
+              id="startDate"
+              name="startDate"
+              type="date"
+              required
+              min={today}
+              value={startDate}
+              onChange={(event) => onStartDateChange(event.target.value)}
+            />
           </div>
           <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#eaeaf0] bg-[#f4f5f7] px-3 py-3 text-sm font-semibold text-[#555885]">
             <input
@@ -144,7 +168,9 @@ export function RequestDialog({
               name="endDate"
               type="date"
               required={!halfDay}
-              min={today}
+              min={endMin}
+              value={halfDay ? startDate : endDate}
+              onChange={(event) => setEndDate(event.target.value)}
               disabled={halfDay}
               className={halfDay ? "bg-muted opacity-60" : undefined}
             />

@@ -1,0 +1,14 @@
+---
+description: Next.js / Prisma / UI konvenciók a leave-management projektben
+alwaysApply: true
+---
+
+# Stack konvenciók
+
+- **Next.js 16** App Router; mutációk Server Actions-ben, ne új REST API a feature-ökhöz.
+- **Prisma 7** + `@prisma/adapter-mariadb`; kliens: `src/lib/prisma.ts` → `src/generated/prisma` (gitignore).
+- Séma változás után: `npm run db:generate`; helyi DB: `docker compose up -d` (port **3307**).
+- Prisma pool hiba MySQL leállás után: compose up, majd **újraindítsd** a `npm run dev`-et (port **3002**).
+- UI: meglévő shadcn / Base UI minták; HU szövegek; Virgo színek (primary kék), ne generic purple AI look.
+- Client komponens csak ahol kell (`"use client"`); adatok lehetőleg RSC-ből.
+- Ne írj markdown docot kérés nélkül; ne commitolj kérés nélkül; soha `.env` / `emails/`.

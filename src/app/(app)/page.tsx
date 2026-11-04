@@ -6,6 +6,7 @@ import {
   Check,
   Hourglass,
   Network,
+  Settings,
   TreePalm,
 } from "lucide-react";
 import { LeaveCalendar } from "@/components/leave-calendar";
@@ -37,6 +38,12 @@ const adminLinks = [
     title: "Munkarend",
     description: "Éves munkaszüneti napok és áthelyezett munkanapok beállítása.",
     icon: CalendarDays,
+  },
+  {
+    href: "/beallitasok",
+    title: "Beállítások",
+    description: "Extra e-mail címek a jóváhagyott szabadságkérelmek másolatához.",
+    icon: Settings,
   },
   {
     href: "/riportok",

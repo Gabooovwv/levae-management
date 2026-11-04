@@ -242,14 +242,16 @@ export async function reviewLeaveRequest(
 
   const daysLabel = formatWorkDays(request.workDays, request.halfDay);
   const decision = status === "approved" ? "jóváhagyta" : "elutasította";
-  await sendMails([
+  const requesterName = `${request.user.lastName} ${request.user.firstName}`;
+  const reviewerName = `${reviewer.lastName} ${reviewer.firstName}`;
+  const mails = [
     {
       to: request.user.email,
       subject: `Szabadságigényed ${status === "approved" ? "elfogadva" : "elutasítva"} (${span})`,
       body: [
         `Szia ${request.user.firstName}!`,
         "",
-        `${reviewer.lastName} ${reviewer.firstName} ${decision} a szabadságigényedet.`,
+        `${reviewerName} ${decision} a szabadságigényedet.`,
         "",
         `Időszak: ${span}`,
         `Jogcím: ${request.leaveType.name}`,
@@ -259,7 +261,37 @@ export async function reviewLeaveRequest(
         "A részleteket a szabadságkezelőben is megtalálod.",
       ].join("\n"),
     },
-  ]);
+  ];
+
+  if (status === "approved") {
+    const copyTo = await prisma.approvalNotifyEmail.findMany({
+      orderBy: { email: "asc" },
+      select: { email: true },
+    });
+    for (const row of copyTo) {
+      if (row.email.toLowerCase() === request.user.email.toLowerCase()) continue;
+      mails.push({
+        to: row.email,
+        subject: `Jóváhagyott szabadság: ${requesterName} (${span})`,
+        body: [
+          "Sziasztok!",
+          "",
+          `Egy szabadságigényt jóváhagytak.`,
+          "",
+          `Munkavállaló: ${requesterName}`,
+          `E-mail: ${request.user.email}`,
+          `Időszak: ${span}`,
+          `Jogcím: ${request.leaveType.name}`,
+          `Hossz: ${daysLabel}`,
+          `Jóváhagyta: ${reviewerName}`,
+          "",
+          "Ez egy automatikus másolat a beállított értesítési címlistára.",
+        ].join("\n"),
+      });
+    }
+  }
+
+  await sendMails(mails);
 
   refresh();
   return {
@@ -846,6 +878,51 @@ export async function deleteStaffRole(id: number): Promise<ActionResult> {
   await prisma.staffRole.delete({ where: { id } });
   refresh();
   return { ok: true, message: `A(z) ${role.name} szerep törölve.` };
+}
+
+function normalizeNotifyEmail(raw: string) {
+  return raw.trim().toLowerCase();
+}
+
+function isValidNotifyEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 160;
+}
+
+export async function listApprovalNotifyEmails() {
+  const admin = await requireAdmin();
+  if (!admin) return [];
+  return prisma.approvalNotifyEmail.findMany({
+    orderBy: { email: "asc" },
+    select: { id: true, email: true },
+  });
+}
+
+export async function addApprovalNotifyEmail(formData: FormData): Promise<ActionResult> {
+  const admin = await requireAdmin();
+  if (!admin) return { ok: false, message: "Csak az admin vehet fel értesítési címet." };
+
+  const email = normalizeNotifyEmail(String(formData.get("email") ?? ""));
+  if (!email) return { ok: false, message: "Add meg az e-mail címet." };
+  if (!isValidNotifyEmail(email)) return { ok: false, message: "Érvénytelen e-mail cím." };
+
+  const existing = await prisma.approvalNotifyEmail.findUnique({ where: { email } });
+  if (existing) return { ok: false, message: "Ez az e-mail cím már a listán van." };
+
+  await prisma.approvalNotifyEmail.create({ data: { email } });
+  refresh();
+  return { ok: true, message: `${email} felkerült a jóváhagyási értesítési listára.` };
+}
+
+export async function removeApprovalNotifyEmail(id: number): Promise<ActionResult> {
+  const admin = await requireAdmin();
+  if (!admin) return { ok: false, message: "Csak az admin törölhet értesítési címet." };
+
+  const row = await prisma.approvalNotifyEmail.findUnique({ where: { id } });
+  if (!row) return { ok: false, message: "A cím nem található." };
+
+  await prisma.approvalNotifyEmail.delete({ where: { id } });
+  refresh();
+  return { ok: true, message: `${row.email} törölve a listáról.` };
 }
 
 export async function setCalendarDay(

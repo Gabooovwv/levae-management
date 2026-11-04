@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   Menu,
   Network,
+  Settings,
   Users,
 } from "lucide-react";
 import { PendingApprovalsPanel } from "@/components/pending-approvals-panel";
@@ -57,6 +58,7 @@ const titles: Record<string, string> = {
   "/jovahagyasok": "Jóváhagyások",
   "/szervezet": "Dolgozók",
   "/munkarend": "Munkarend",
+  "/beallitasok": "Beállítások",
   "/csapatom": "Csapatom",
   "/riportok": "Riportok",
 };
@@ -82,6 +84,7 @@ function NavLinks({
       ? [
           { href: "/szervezet", label: "Dolgozók", icon: Network },
           { href: "/munkarend", label: "Munkarend", icon: CalendarRange },
+          { href: "/beallitasok", label: "Beállítások", icon: Settings },
         ]
       : []),
     ...(data.hasDirectReports ? [{ href: "/csapatom", label: "Csapatom", icon: Users }] : []),

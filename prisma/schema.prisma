@@ -146,3 +146,10 @@ model CalendarDay {
   kind CalendarDayKind
   note String?         @db.VarChar(160)
 }
+
+/** Extra címzettek: minden jóváhagyott szabadságigényről e-mailt kapnak. */
+model ApprovalNotifyEmail {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique @db.VarChar(160)
+  createdAt DateTime @default(now())
+}
