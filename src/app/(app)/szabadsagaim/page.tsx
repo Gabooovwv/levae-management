@@ -8,10 +8,10 @@ import { getBalance, getCurrentUser, getLeaveTypes, getMyRequests, markNotificat
 import { cn } from "@/lib/utils";
 
 const filters = [
-  { href: "/szabadsagaim", label: "Összes", value: "" },
-  { href: "/szabadsagaim?status=pending", label: "Függőben", value: "pending" },
   { href: "/szabadsagaim?status=approved", label: "Jóváhagyva", value: "approved" },
+  { href: "/szabadsagaim?status=pending", label: "Függőben", value: "pending" },
   { href: "/szabadsagaim?status=rejected", label: "Elutasítva", value: "rejected" },
+  { href: "/szabadsagaim?status=all", label: "Összes", value: "all" },
 ];
 
 export default async function MyLeavePage({
@@ -19,17 +19,26 @@ export default async function MyLeavePage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
-  const { status } = await searchParams;
+  const { status: statusParam } = await searchParams;
   const user = await getCurrentUser();
   if (user.role === "admin") redirect("/");
+
+  const status =
+    statusParam === "all" ||
+    statusParam === "pending" ||
+    statusParam === "approved" ||
+    statusParam === "rejected"
+      ? statusParam
+      : "approved";
+
   const year = new Date().getFullYear();
   const [rows, balance, types] = await Promise.all([
-    getMyRequests(user.id, status),
+    getMyRequests(user.id, status === "all" ? undefined : status),
     getBalance(user.id, year),
     getLeaveTypes(),
     markNotificationsRead(user.id, "/szabadsagaim"),
   ]);
-  const active = filters.some((filter) => filter.value === status) ? status ?? "" : "";
+  const active = status;
 
   return (
     <div className="grid gap-6">
@@ -69,7 +78,10 @@ export default async function MyLeavePage({
             </Link>
           ))}
         </CardContent>
-        <RequestsTable rows={rows} />
+        <p className="px-6 pb-2 text-xs text-muted-foreground">
+          Dupla kattintással megnyílik a kérelem és a felettes válasza.
+        </p>
+        <RequestsTable rows={rows} detailsOnDoubleClick />
       </Card>
     </div>
   );

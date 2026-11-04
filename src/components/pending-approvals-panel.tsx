@@ -1,19 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell } from "lucide-react";
-import { toast } from "sonner";
-import { listPendingApprovals, reviewLeaveRequest } from "@/app/actions";
-import { Button } from "@/components/ui/button";
+import { ClipboardCheck } from "lucide-react";
+import { listPendingApprovals } from "@/app/actions";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ReviewRequestDialog,
+  type ReviewableRequest,
+} from "@/components/review-request-dialog";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -24,18 +19,6 @@ import {
 import { formatRange, formatWorkDays } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
-export type PendingApprovalItem = {
-  id: number;
-  startDate: string;
-  endDate: string;
-  workDays: number;
-  halfDay: boolean;
-  typeName: string;
-  note: string | null;
-  personName: string;
-  department: string;
-};
-
 export function PendingApprovalsPanel({
   pendingCount,
 }: {
@@ -43,10 +26,9 @@ export function PendingApprovalsPanel({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<PendingApprovalItem[]>([]);
+  const [items, setItems] = useState<ReviewableRequest[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<PendingApprovalItem | null>(null);
-  const [reviewPending, startReview] = useTransition();
+  const [selected, setSelected] = useState<ReviewableRequest | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,21 +44,6 @@ export function PendingApprovalsPanel({
     if (open) void load();
   }, [open, load]);
 
-  function review(status: "approved" | "rejected") {
-    if (!selected) return;
-    startReview(async () => {
-      const result = await reviewLeaveRequest(selected.id, status);
-      if (result.ok) {
-        toast.success(result.message);
-        setSelected(null);
-        await load();
-        router.refresh();
-        return;
-      }
-      toast.error(result.message);
-    });
-  }
-
   return (
     <>
       <Button
@@ -86,7 +53,7 @@ export function PendingApprovalsPanel({
         aria-label="Jóváhagyásra váró kérelmek"
         onClick={() => setOpen(true)}
       >
-        <Bell />
+        <ClipboardCheck />
         {pendingCount > 0 ? (
           <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#d81c1c] px-1 text-[11px] font-semibold text-white ring-2 ring-white">
             {pendingCount > 99 ? "99+" : pendingCount}
@@ -140,73 +107,18 @@ export function PendingApprovalsPanel({
         </SheetContent>
       </Sheet>
 
-      <Dialog
+      <ReviewRequestDialog
+        request={selected}
         open={selected !== null}
         onOpenChange={(next) => {
           if (!next) setSelected(null);
         }}
-      >
-        <DialogContent className="sm:max-w-[440px]">
-          {selected ? (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-xl font-semibold tracking-tight">
-                  Kérelem elbírálása
-                </DialogTitle>
-                <DialogDescription>
-                  {selected.personName} szabadságigénye. A döntésről a dolgozó e-mailt kap.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-2 rounded-xl bg-[#f4f5f7] px-4 py-3 text-sm">
-                <p>
-                  <span className="text-muted-foreground">Munkavállaló: </span>
-                  <span className="font-semibold">{selected.personName}</span>
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Részleg: </span>
-                  {selected.department}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Időszak: </span>
-                  {formatRange(selected.startDate, selected.endDate)}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Hossz: </span>
-                  {formatWorkDays(selected.workDays, selected.halfDay)}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Jogcím: </span>
-                  {selected.typeName}
-                </p>
-                {selected.note ? (
-                  <p>
-                    <span className="text-muted-foreground">Megjegyzés: </span>
-                    {selected.note}
-                  </p>
-                ) : null}
-              </div>
-              <DialogFooter className="bg-transparent">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={reviewPending}
-                  onClick={() => review("rejected")}
-                >
-                  Elutasítás
-                </Button>
-                <Button
-                  type="button"
-                  disabled={reviewPending}
-                  className="font-semibold hover:bg-[#477bf3]"
-                  onClick={() => review("approved")}
-                >
-                  {reviewPending ? "Mentés…" : "Jóváhagyás"}
-                </Button>
-              </DialogFooter>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+        onReviewed={async () => {
+          setSelected(null);
+          await load();
+          router.refresh();
+        }}
+      />
     </>
   );
 }

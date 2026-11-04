@@ -26,6 +26,8 @@ type RequestRecord = {
   workDays: number;
   halfDay: boolean;
   note: string | null;
+  reviewNote?: string | null;
+  reviewedAt?: Date | null;
   status: "pending" | "approved" | "rejected";
   leaveType: { name: string; deductsBalance: boolean };
   user: {
@@ -47,6 +49,8 @@ function mapRequest(row: RequestRecord): RequestRow {
     deductsBalance: row.leaveType.deductsBalance,
     status: row.status,
     note: row.note,
+    reviewNote: row.reviewNote ?? null,
+    reviewedAt: row.reviewedAt ? toIso(row.reviewedAt) : null,
     personName: `${row.user.firstName} ${row.user.lastName}`,
     initials: row.user.initials,
     department: row.user.department.name,
@@ -160,17 +164,26 @@ export async function getShell(): Promise<ShellData> {
   const selected =
     companies.find((company) => company.id === selectedCompanyId) ?? companies[0];
 
-  const pendingWhere = {
-    status: "pending" as const,
-    companyId: selected.id,
-    user: { managerId: user.id },
-  };
-  const [pendingCount, directReportCount] = await Promise.all([
-    prisma.leaveRequest.count({ where: pendingWhere }),
-    prisma.user.count({
-      where: { managerId: user.id, role: { not: "admin" } },
-    }),
-  ]);
+  const [pendingCount, directReportCount, unreadNotifications, notifications] =
+    await Promise.all([
+      prisma.leaveRequest.count({
+        where: {
+          status: "pending",
+          user: { managerId: user.id, role: { not: "admin" } },
+        },
+      }),
+      prisma.user.count({
+        where: { managerId: user.id, role: { not: "admin" }, active: true },
+      }),
+      prisma.notification.count({
+        where: { userId: user.id, readAt: null },
+      }),
+      prisma.notification.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
+    ]);
 
   const hr = await prisma.user.findMany({
     where: { role: "hr" },
@@ -193,17 +206,13 @@ export async function getShell(): Promise<ShellData> {
     selectedCompanyName: selected.name,
     pendingApprovals: pendingCount,
     hasDirectReports: user.role !== "admin" && directReportCount > 0,
-    notifications: (
-      await prisma.notification.findMany({
-        where: { userId: user.id, readAt: null },
-        orderBy: { createdAt: "desc" },
-        take: 8,
-      })
-    ).map((item) => ({
+    unreadNotifications,
+    notifications: notifications.map((item) => ({
       id: item.id,
       title: item.title,
       detail: item.detail,
       href: item.href,
+      read: item.readAt !== null,
     })),
     hrContacts: hr.map((person) => ({
       name: `${person.firstName} ${person.lastName}`,
@@ -269,35 +278,91 @@ export async function getDashboard(userId: number, companyId: number) {
   };
 }
 
+export type CalendarEvent = {
+  date: string;
+  kind: "mine" | "team";
+  name: string;
+  status: "pending" | "approved";
+  typeName: string;
+  halfDay: boolean;
+  requestId: number;
+  startDate: string;
+  endDate: string;
+};
+
+/** Saját + (ha van) közvetlen beosztottak / azonos felettesű kollégák távollétei. */
 export async function getCalendarEvents(
-  companyId: number,
+  _companyId: number,
   userId: number,
   year: number,
-) {
+): Promise<CalendarEvent[]> {
+  const me = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, managerId: true },
+  });
+  if (!me) return [];
+
+  const reportIds = (
+    await prisma.user.findMany({
+      where: { managerId: userId, role: { not: "admin" }, active: true },
+      select: { id: true },
+    })
+  ).map((row) => row.id);
+
+  const peerIds =
+    me.managerId != null
+      ? (
+          await prisma.user.findMany({
+            where: {
+              managerId: me.managerId,
+              id: { not: userId },
+              role: { not: "admin" },
+              active: true,
+            },
+            select: { id: true },
+          })
+        ).map((row) => row.id)
+      : [];
+
+  const visibleIds = [...new Set([userId, ...reportIds, ...peerIds])];
+
   const rows = await prisma.leaveRequest.findMany({
     where: {
+      userId: { in: visibleIds },
       status: { in: ["approved", "pending"] },
       startDate: { lt: new Date(`${year + 1}-01-01T00:00:00.000Z`) },
       endDate: { gte: new Date(`${year}-01-01T00:00:00.000Z`) },
-      OR: [{ companyId }, { userId }],
     },
     include: requestInclude,
+    orderBy: { startDate: "asc" },
   });
 
-  const events: {
-    date: string;
-    kind: "mine" | "team";
-    name: string;
-  }[] = [];
-
+  const events: CalendarEvent[] = [];
   const rules = await loadWorkdayRulesForYear(year);
+
   for (const row of rows) {
-    for (const date of workdaysOf(toIso(row.startDate), toIso(row.endDate), rules)) {
-      if (yearOf(date) !== year) continue;
+    const start = toIso(row.startDate);
+    const end = toIso(row.endDate);
+    const name = `${row.user.lastName} ${row.user.firstName}`;
+    const kind = row.userId === userId ? "mine" : "team";
+    const days = workdaysOf(start, end, rules);
+    // Fél nap: a kezdőnap akkor is jelenjen meg, ha a rules szerint munkanap.
+    const dates =
+      row.halfDay && days.length === 0 && yearOf(start) === year
+        ? [start]
+        : days.filter((date) => yearOf(date) === year);
+
+    for (const date of dates) {
       events.push({
         date,
-        kind: row.userId === userId ? "mine" : "team",
-        name: `${row.user.firstName} ${row.user.lastName}`,
+        kind,
+        name,
+        status: row.status as "pending" | "approved",
+        typeName: row.leaveType.name,
+        halfDay: row.halfDay,
+        requestId: row.id,
+        startDate: start,
+        endDate: end,
       });
     }
   }
@@ -305,47 +370,76 @@ export async function getCalendarEvents(
   return events;
 }
 
-export async function getTeam(
-  companyId: number,
-  managerId: number,
-  ownCompanyId: number,
-) {
+export async function getMyLeavePeriods(userId: number, year: number) {
+  const rows = await prisma.leaveRequest.findMany({
+    where: {
+      userId,
+      status: { in: ["approved", "pending"] },
+      startDate: { lt: new Date(`${year + 1}-01-01T00:00:00.000Z`) },
+      endDate: { gte: new Date(`${year}-01-01T00:00:00.000Z`) },
+    },
+    include: { leaveType: true },
+    orderBy: { startDate: "asc" },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    startDate: toIso(row.startDate),
+    endDate: toIso(row.endDate),
+    workDays: row.workDays,
+    halfDay: row.halfDay,
+    status: row.status as "pending" | "approved",
+    typeName: row.leaveType.name,
+    note: row.note,
+  }));
+}
+
+/** Közvetlen beosztottak listája (Csapatom) — cégválasztótól függetlenül. */
+export async function getTeam(managerId: number) {
   const year = new Date().getFullYear();
   const today = todayIso();
-  const visible = await prisma.user.findMany({
-    where:
-      companyId === ownCompanyId
-        ? {
-            companyId,
-            role: { in: ["employee", "manager"] },
-            OR: [{ id: managerId }, { managerId }],
-          }
-        : { companyId, role: { in: ["employee", "manager"] } },
+  const reports = await prisma.user.findMany({
+    where: {
+      managerId,
+      role: { not: "admin" },
+      active: true,
+    },
     include: { department: true },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 
   const cards = [];
-  for (const person of visible) {
+  for (const person of reports) {
     const balance = await getBalance(person.id, year);
-    const next = await prisma.leaveRequest.findFirst({
-      where: {
-        userId: person.id,
-        status: { in: ["approved", "pending"] },
-        endDate: { gte: new Date(`${today}T00:00:00.000Z`) },
-      },
-      include: requestInclude,
-      orderBy: { startDate: "asc" },
-    });
+    const [next, history] = await Promise.all([
+      prisma.leaveRequest.findFirst({
+        where: {
+          userId: person.id,
+          status: { in: ["approved", "pending"] },
+          endDate: { gte: new Date(`${today}T00:00:00.000Z`) },
+        },
+        include: requestInclude,
+        orderBy: { startDate: "asc" },
+      }),
+      prisma.leaveRequest.findMany({
+        where: {
+          userId: person.id,
+          status: { in: ["approved", "rejected"] },
+        },
+        include: requestInclude,
+        orderBy: [{ reviewedAt: "desc" }, { startDate: "desc" }],
+        take: 40,
+      }),
+    ]);
     cards.push({
       id: person.id,
-      name: `${person.firstName} ${person.lastName}`,
+      name: `${person.lastName} ${person.firstName}`,
       initials: person.initials,
       department: person.department.name,
       jobTitle: person.jobTitle,
-      isSelf: person.id === managerId,
       balance,
       next: next ? mapRequest(next) : null,
+      history: history.map(mapRequest),
     });
   }
 
@@ -375,42 +469,100 @@ export async function getApprovals(managerId: number, companyId: number) {
   };
 }
 
-export async function getReport(companyId: number) {
+export type ReportSnapshot = {
+  year: number;
+  scope: "own" | "team" | "company";
+  title: string;
+  description: string;
+  headcount: number;
+  approvedDays: number;
+  pendingDays: number;
+  rejectedDays: number;
+  rejectedCount: number;
+  availableDays: number;
+  totalDays: number;
+  departments: { name: string; people: number; approvedDays: number; pendingDays: number }[];
+  people: {
+    id: number;
+    name: string;
+    department: string;
+    approvedDays: number;
+    pendingDays: number;
+    availableDays: number;
+    totalDays: number;
+  }[];
+  types: { name: string; days: number; count: number }[];
+  months: number[];
+};
+
+type ReportUser = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  department: { name: string };
+};
+
+type ReportRequest = {
+  userId: number;
+  workDays: number;
+  status: "pending" | "approved" | "rejected";
+  startDate: Date;
+  endDate: Date;
+  leaveType: { name: string; deductsBalance: boolean };
+  user: { department: { name: string } };
+};
+
+async function aggregateReport(
+  users: ReportUser[],
+  requests: ReportRequest[],
+  meta: { scope: ReportSnapshot["scope"]; title: string; description: string },
+): Promise<ReportSnapshot> {
   const year = new Date().getFullYear();
-  const users = await prisma.user.findMany({
-    where: { companyId, role: { in: ["employee", "manager"] } },
-    include: { department: true },
-  });
-  const requests = await prisma.leaveRequest.findMany({
-    where: {
-      companyId,
-      startDate: {
-        gte: new Date(`${year}-01-01T00:00:00.000Z`),
-        lt: new Date(`${year + 1}-01-01T00:00:00.000Z`),
-      },
-    },
-    include: { leaveType: true, user: { include: { department: true } } },
-  });
+  const rules = await loadWorkdayRulesForYear(year);
 
   const departments = new Map<
     string,
     { name: string; people: number; approvedDays: number; pendingDays: number }
   >();
+  const peopleMap = new Map<
+    number,
+    {
+      id: number;
+      name: string;
+      department: string;
+      approvedDays: number;
+      pendingDays: number;
+      availableDays: number;
+      totalDays: number;
+    }
+  >();
 
-  for (const user of users) {
-    const current = departments.get(user.department.name) ?? {
-      name: user.department.name,
+  for (const person of users) {
+    const dept = departments.get(person.department.name) ?? {
+      name: person.department.name,
       people: 0,
       approvedDays: 0,
       pendingDays: 0,
     };
-    current.people += 1;
-    departments.set(user.department.name, current);
+    dept.people += 1;
+    departments.set(person.department.name, dept);
+
+    const balance = await getBalance(person.id, year);
+    peopleMap.set(person.id, {
+      id: person.id,
+      name: `${person.lastName} ${person.firstName}`,
+      department: person.department.name,
+      approvedDays: 0,
+      pendingDays: 0,
+      availableDays: balance.availableDays,
+      totalDays: balance.totalDays,
+    });
   }
 
   const types = new Map<string, { name: string; days: number; count: number }>();
   const months = Array.from({ length: 12 }, () => 0);
-  const rules = await loadWorkdayRulesForYear(year);
+  let rejectedDays = 0;
+  let rejectedCount = 0;
 
   for (const request of requests) {
     const type = types.get(request.leaveType.name) ?? {
@@ -424,34 +576,125 @@ export async function getReport(companyId: number) {
     }
     types.set(request.leaveType.name, type);
 
-    if (request.status === "rejected") continue;
-    const bucket = departments.get(request.user.department.name);
-    if (bucket) {
-      if (request.status === "approved") bucket.approvedDays += request.workDays;
-      if (request.status === "pending") bucket.pendingDays += request.workDays;
+    if (request.status === "rejected") {
+      rejectedDays += request.workDays;
+      rejectedCount += 1;
+      continue;
+    }
+
+    const dept = departments.get(request.user.department.name);
+    const person = peopleMap.get(request.userId);
+    if (request.status === "approved") {
+      if (dept) dept.approvedDays += request.workDays;
+      if (person) person.approvedDays += request.workDays;
+    }
+    if (request.status === "pending") {
+      if (dept) dept.pendingDays += request.workDays;
+      if (person) person.pendingDays += request.workDays;
     }
 
     if (request.status === "approved" && request.leaveType.deductsBalance) {
-      for (const day of workdaysOf(toIso(request.startDate), toIso(request.endDate), rules)) {
-        if (yearOf(day) === year) months[monthIndex(day)] += 1;
+      const days = workdaysOf(toIso(request.startDate), toIso(request.endDate), rules).filter(
+        (day) => yearOf(day) === year,
+      );
+      if (days.length === 0) continue;
+      const perDay = request.workDays / days.length;
+      for (const day of days) {
+        months[monthIndex(day)] += perDay;
       }
     }
   }
 
-  const approvedDays = months.reduce((sum, days) => sum + days, 0);
-  const pendingDays = requests
-    .filter((request) => request.status === "pending")
-    .reduce((sum, request) => sum + request.workDays, 0);
+  const approvedDays = [...peopleMap.values()].reduce((sum, row) => sum + row.approvedDays, 0);
+  const pendingDays = [...peopleMap.values()].reduce((sum, row) => sum + row.pendingDays, 0);
+  const totalDays = [...peopleMap.values()].reduce((sum, row) => sum + row.totalDays, 0);
+  const availableDays = [...peopleMap.values()].reduce((sum, row) => sum + row.availableDays, 0);
 
   return {
     year,
+    scope: meta.scope,
+    title: meta.title,
+    description: meta.description,
     headcount: users.length,
     approvedDays,
     pendingDays,
-    departments: [...departments.values()],
+    rejectedDays,
+    rejectedCount,
+    availableDays,
+    totalDays,
+    departments: [...departments.values()].sort((a, b) => a.name.localeCompare(b.name, "hu")),
+    people: [...peopleMap.values()].sort((a, b) => a.name.localeCompare(b.name, "hu")),
     types: [...types.values()].sort((a, b) => b.days - a.days),
     months,
   };
+}
+
+async function yearRequestsForUsers(userIds: number[]) {
+  if (userIds.length === 0) return [];
+  const year = new Date().getFullYear();
+  return prisma.leaveRequest.findMany({
+    where: {
+      userId: { in: userIds },
+      startDate: {
+        gte: new Date(`${year}-01-01T00:00:00.000Z`),
+        lt: new Date(`${year + 1}-01-01T00:00:00.000Z`),
+      },
+    },
+    include: { leaveType: true, user: { include: { department: true } } },
+  });
+}
+
+export async function getOwnReport(userId: number): Promise<ReportSnapshot> {
+  const person = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { department: true },
+  });
+  if (!person || person.role === "admin") {
+    return aggregateReport([], [], {
+      scope: "own",
+      title: "Saját riport",
+      description: "Nincs megjeleníthető saját adat.",
+    });
+  }
+  const users = [person];
+  const requests = await yearRequestsForUsers([person.id]);
+  return aggregateReport(users, requests, {
+    scope: "own",
+    title: "Saját riport",
+    description: "A te éves szabadságfelhasználásod és függő igényeid.",
+  });
+}
+
+export async function getTeamReport(managerId: number): Promise<ReportSnapshot> {
+  const reports = await prisma.user.findMany({
+    where: { managerId, role: { not: "admin" }, active: true },
+    include: { department: true },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
+  const requests = await yearRequestsForUsers(reports.map((row) => row.id));
+  return aggregateReport(reports, requests, {
+    scope: "team",
+    title: "Csapatom riport",
+    description: "A közvetlen beosztottaid összesített szabadságadatai.",
+  });
+}
+
+export async function getCompanyReport(companyId: number): Promise<ReportSnapshot> {
+  const users = await prisma.user.findMany({
+    where: { companyId, role: { not: "admin" }, active: true },
+    include: { department: true },
+  });
+  const requests = await yearRequestsForUsers(users.map((row) => row.id));
+  return aggregateReport(users, requests, {
+    scope: "company",
+    title: "Szervezeti riport",
+    description: "A teljes szervezet éves összesítője.",
+  });
+}
+
+/** @deprecated use getCompanyReport / getOwnReport / getTeamReport */
+export async function getReport(companyId: number) {
+  return getCompanyReport(companyId);
 }
 
 export async function markNotificationsRead(userId: number, href: string) {

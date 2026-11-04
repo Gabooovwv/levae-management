@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  Bell,
   CalendarDays,
   CalendarRange,
   Check,
@@ -15,17 +14,11 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import { NotificationsPanel } from "@/components/notifications-panel";
 import { PendingApprovalsPanel } from "@/components/pending-approvals-panel";
 import { VirgoLogo } from "@/components/virgo-logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Sheet,
   SheetContent,
@@ -232,35 +225,10 @@ export function ShellFrame({ data, children }: { data: ShellData; children: Reac
           <div className="flex items-center gap-2">
             {data.hasDirectReports && data.user.role !== "admin" ? (
               <PendingApprovalsPanel pendingCount={data.pendingApprovals} />
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button variant="outline" size="icon" className="relative bg-white" aria-label="Értesítések" />
-                  }
-                >
-                  <Bell />
-                  {data.notifications.length > 0 ? (
-                    <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-[#d81c1c] ring-2 ring-white" />
-                  ) : null}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72">
-                  <DropdownMenuLabel>Értesítések</DropdownMenuLabel>
-                  {data.notifications.length === 0 ? (
-                    <DropdownMenuItem disabled>Nincs új értesítés</DropdownMenuItem>
-                  ) : (
-                    data.notifications.map((item) => (
-                      <DropdownMenuItem key={item.id} render={<Link href={item.href} />}>
-                        <span>
-                          <span className="block font-semibold">{item.title}</span>
-                          <span className="text-xs text-muted-foreground">{item.detail}</span>
-                        </span>
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            ) : null}
+            {data.user.role !== "admin" ? (
+              <NotificationsPanel unreadCount={data.unreadNotifications} />
+            ) : null}
             <Avatar>
               <AvatarFallback className="bg-[#f3dcca] text-xs font-semibold text-[#8a5738]">
                 {data.user.initials}

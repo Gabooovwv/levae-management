@@ -26,6 +26,6 @@ Next.js szabadságkezelő (HU UI). Teljes leírás: `README.md`, agent összefog
 
 - Actions: `src/app/actions.ts`
 - Queries: `src/lib/data.ts`
-- Munkanap: `src/lib/dates.ts`, `src/lib/work-calendar.ts`
+- Munkanap: `src/lib/dates.ts`, `src/lib/work-calendar.ts` — admin naptárváltozás után `recalculateLeaveRequestsOverlapping`
 - Mail: `src/lib/mail.ts`
 - Séma: `prisma/schema.prisma`

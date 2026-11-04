@@ -3,11 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { countWorkdays, formatWorkDays, isWorkday, toIso, yearOf } from "@/lib/dates";
+import { formatWorkDays, isWorkday, toIso, yearOf } from "@/lib/dates";
 import { getCurrentUser, sumWorkDays } from "@/lib/data";
 import { inactiveReasonLabel, isInactiveReason } from "@/lib/inactive-reasons";
 import { sendMails } from "@/lib/mail";
-import { loadWorkdayRules } from "@/lib/work-calendar";
+import {
+  computeLeaveWorkDays,
+  loadWorkdayRules,
+  recalculateLeaveRequestsOverlapping,
+} from "@/lib/work-calendar";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -50,9 +54,9 @@ export async function createLeaveRequest(formData: FormData): Promise<ActionResu
     if (!isWorkday(startDate, rules)) {
       return { ok: false, message: "Fél napot csak munkanapra lehet igényelni." };
     }
-    workDays = 0.5;
+    workDays = computeLeaveWorkDays(startDate, endDate, true, rules);
   } else {
-    workDays = countWorkdays(startDate, endDate, rules);
+    workDays = computeLeaveWorkDays(startDate, endDate, false, rules);
     if (workDays < 1) {
       return { ok: false, message: "A kijelölt időszakban nincs munkanap." };
     }
@@ -184,6 +188,7 @@ export async function createLeaveRequest(formData: FormData): Promise<ActionResu
 export async function reviewLeaveRequest(
   requestId: number,
   status: "approved" | "rejected",
+  reviewNote: string | null = null,
 ): Promise<ActionResult> {
   const reviewer = await getCurrentUser();
   const request = await prisma.leaveRequest.findUnique({
@@ -196,6 +201,11 @@ export async function reviewLeaveRequest(
   }
   if (request.user.managerId !== reviewer.id) {
     return { ok: false, message: "Ezt az igényt nem hagyhatod jóvá." };
+  }
+
+  const noteClean = reviewNote?.trim() || null;
+  if (noteClean && noteClean.length > 2000) {
+    return { ok: false, message: "A megjegyzés túl hosszú (max. 2000 karakter)." };
   }
 
   if (status === "approved" && request.leaveType.deductsBalance) {
@@ -219,6 +229,7 @@ export async function reviewLeaveRequest(
       status,
       reviewerId: reviewer.id,
       reviewedAt: new Date(),
+      reviewNote: noteClean,
     },
   });
 
@@ -230,12 +241,15 @@ export async function reviewLeaveRequest(
   const start = toIso(request.startDate);
   const end = toIso(request.endDate);
   const span = start === end ? start : `${start} – ${end}`;
+  const detailBase = `${span} · ${reviewer.lastName} ${reviewer.firstName}`;
   await prisma.notification.create({
     data: {
       userId: request.userId,
       requestId: request.id,
       title: status === "approved" ? "A felettesed jóváhagyta a kérelmed" : "A felettesed elutasította a kérelmed",
-      detail: `${span} · ${reviewer.lastName} ${reviewer.firstName}`,
+      detail: noteClean
+        ? `${detailBase} · ${noteClean.slice(0, 80)}${noteClean.length > 80 ? "…" : ""}`
+        : detailBase,
       href: "/szabadsagaim",
     },
   });
@@ -257,9 +271,12 @@ export async function reviewLeaveRequest(
         `Jogcím: ${request.leaveType.name}`,
         `Hossz: ${daysLabel}`,
         `Döntés: ${status === "approved" ? "Jóváhagyva" : "Elutasítva"}`,
+        noteClean ? `Megjegyzés: ${noteClean}` : null,
         "",
         "A részleteket a szabadságkezelőben is megtalálod.",
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     },
   ];
 
@@ -284,9 +301,12 @@ export async function reviewLeaveRequest(
           `Jogcím: ${request.leaveType.name}`,
           `Hossz: ${daysLabel}`,
           `Jóváhagyta: ${reviewerName}`,
+          noteClean ? `Megjegyzés: ${noteClean}` : null,
           "",
           "Ez egy automatikus másolat a beállított értesítési címlistára.",
-        ].join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
       });
     }
   }
@@ -327,6 +347,47 @@ export async function listPendingApprovals() {
     personName: `${row.user.lastName} ${row.user.firstName}`,
     department: row.user.department.name,
   }));
+}
+
+export async function listMyNotifications() {
+  const user = await getCurrentUser();
+  const rows = await prisma.notification.findMany({
+    where: { userId: user.id },
+    orderBy: [{ readAt: "asc" }, { createdAt: "desc" }],
+    take: 40,
+  });
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      detail: row.detail,
+      href: row.href,
+      read: row.readAt !== null,
+      createdAt: row.createdAt.toISOString(),
+    }))
+    .sort((a, b) => {
+      if (a.read !== b.read) return a.read ? 1 : -1;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+}
+
+export async function markNotificationRead(id: number): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  const row = await prisma.notification.findFirst({
+    where: { id, userId: user.id },
+  });
+  if (!row) return { ok: false, message: "Az értesítés nem található." };
+
+  if (!row.readAt) {
+    await prisma.notification.update({
+      where: { id: row.id },
+      data: { readAt: new Date() },
+    });
+    refresh();
+  }
+
+  return { ok: true, message: "Értesítés megjelölve olvasottként." };
 }
 
 async function requireAdmin() {
@@ -942,17 +1003,26 @@ export async function setCalendarDay(
 
   if (kind === null) {
     await prisma.calendarDay.deleteMany({ where: { date: day } });
-    refresh();
-    return { ok: true, message: `${date}: alapértelmezett nap.` };
+  } else {
+    await prisma.calendarDay.upsert({
+      where: { date: day },
+      create: { date: day, kind },
+      update: { kind, note: null },
+    });
   }
 
-  await prisma.calendarDay.upsert({
-    where: { date: day },
-    create: { date: day, kind },
-    update: { kind, note: null },
-  });
-
+  const sync = await recalculateLeaveRequestsOverlapping(date);
   refresh();
-  const label = kind === "holiday" ? "munkaszüneti nap" : "áthelyezett munkanap";
-  return { ok: true, message: `${date}: ${label}.` };
+
+  const base =
+    kind === null
+      ? `${date}: alapértelmezett nap.`
+      : `${date}: ${kind === "holiday" ? "munkaszüneti nap" : "áthelyezett munkanap"}.`;
+  const syncMsg =
+    sync.updated > 0
+      ? ` ${sync.updated} érintett szabadságigény hossza frissült.`
+      : sync.checked > 0
+        ? " Érintett igények hossza nem változott."
+        : "";
+  return { ok: true, message: `${base}${syncMsg}` };
 }

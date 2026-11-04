@@ -83,6 +83,8 @@ Kattintás ciklusa egy napra:
 
 Így két hét szabadságnál a közben lévő ünnep nem megy el a keretből, a szombati munkanap viszont igen.
 
+Ha az admin módosít egy napot a munkarendben, az összes **pending/approved** igény, ami tartalmazza azt a napot, automatikusan újraszámolja a `workDays` értékét (pl. áthelyezett szombat visszavonása → kevesebb nap; új ledolgozós szombat → több nap).
+
 ### 4. Szervezet (admin)
 
 `/szervezet`
@@ -96,9 +98,9 @@ Kattintás ciklusa egy napra:
 ### 5. Egyéb oldalak
 
 - **Áttekintés** — keret, közelgő távollét, legutóbbi igények, csapat távollétei (ha van beosztott).
-- **Naptár** — saját és csapat távollétek munkanapokra vetítve.
-- **Csapatom** — beosztottak kerete és következő távolléte.
-- **Riportok** — szervezeti összesítők.
+- **Naptár** — DB-ből: saját (jóváhagyott/függő) és csapat (beosztottak / azonos felettes) távollétek munkanapokra; jobb oldalon saját időszaklista.
+- **Csapatom** — a közvetlen beosztottak listája (keret + következő távollét); cégválasztótól független.
+- **Riportok** — DB-ből: saját éves összesítő; ha van beosztott, **Saját / Csapatom** tabok; adminnak szervezeti riport.
 
 ---
 
@@ -109,6 +111,8 @@ Kattintás ciklusa egy napra:
 | Új igény | Dolgozó + felettes (app értesítés + e-mail) |
 | Elutasítás | Dolgozó |
 | Jóváhagyás | Dolgozó + a Beállításokban felvett extra e-mail címek (`ApprovalNotifyEmail`) |
+
+A dolgozó a fejléc harangjával jobb oldali sheetben látja az értesítéseket: **új = fehér**, **olvasott (egyszer rákattintott) = szürke**. A felettesnél emellett a függő kérelmek panelje is megmarad.
 
 Az extra címzetteket az admin a `/beallitasok` oldalon kezeli. Csak **elfogadott** kérelmekről kapnak másolatot.
 

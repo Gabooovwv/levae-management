@@ -2,11 +2,22 @@
 
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { monthTitle, weekdayShortHeaders } from "@/lib/dates";
+import { formatRange, formatWorkDays, monthTitle, weekdayShortHeaders } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
-type CalendarEvent = { date: string; kind: "mine" | "team"; name: string };
+export type CalendarEvent = {
+  date: string;
+  kind: "mine" | "team";
+  name: string;
+  status?: "pending" | "approved";
+  typeName?: string;
+  halfDay?: boolean;
+  requestId?: number;
+  startDate?: string;
+  endDate?: string;
+};
 
 export function LeaveCalendar({
   events,
@@ -25,12 +36,40 @@ export function LeaveCalendar({
   const headers = weekdayShortHeaders();
 
   const byDate = useMemo(() => {
-    const map = new Map<string, { mine: boolean; team: boolean; names: string[] }>();
+    const map = new Map<
+      string,
+      {
+        mine: boolean;
+        team: boolean;
+        pending: boolean;
+        halfDay: boolean;
+        names: string[];
+        titles: string[];
+      }
+    >();
     for (const event of events) {
-      const current = map.get(event.date) ?? { mine: false, team: false, names: [] };
+      const current = map.get(event.date) ?? {
+        mine: false,
+        team: false,
+        pending: false,
+        halfDay: false,
+        names: [],
+        titles: [],
+      };
       if (event.kind === "mine") current.mine = true;
       else current.team = true;
+      if (event.status === "pending") current.pending = true;
+      if (event.halfDay) current.halfDay = true;
       if (!current.names.includes(event.name)) current.names.push(event.name);
+      const label = [
+        event.name,
+        event.typeName,
+        event.status === "pending" ? "függőben" : "jóváhagyva",
+        event.halfDay ? "fél nap" : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (!current.titles.includes(label)) current.titles.push(label);
       map.set(event.date, current);
     }
     return map;
@@ -58,9 +97,44 @@ export function LeaveCalendar({
     });
   }
 
+  const monthPrefix = `${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}`;
   const monthEvents = events
-    .filter((event) => event.date.startsWith(`${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}`))
+    .filter((event) => event.date.startsWith(monthPrefix))
     .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, "hu"));
+
+  const monthPeriods = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        kind: "mine" | "team";
+        name: string;
+        status: "pending" | "approved";
+        typeName: string;
+        halfDay: boolean;
+        startDate: string;
+        endDate: string;
+        dates: string[];
+      }
+    >();
+    for (const event of monthEvents) {
+      const key = `${event.requestId ?? event.name}-${event.startDate ?? event.date}-${event.kind}`;
+      const current = map.get(key) ?? {
+        key,
+        kind: event.kind,
+        name: event.name,
+        status: event.status ?? "approved",
+        typeName: event.typeName ?? "Szabadság",
+        halfDay: event.halfDay ?? false,
+        startDate: event.startDate ?? event.date,
+        endDate: event.endDate ?? event.date,
+        dates: [] as string[],
+      };
+      current.dates.push(event.date);
+      map.set(key, current);
+    }
+    return [...map.values()].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }, [monthEvents]);
 
   return (
     <div>
@@ -84,22 +158,41 @@ export function LeaveCalendar({
         {cells.map((cell) => {
           const info = cell.date ? byDate.get(cell.date) : undefined;
           const isToday = cell.date === today;
+          const halfDay = Boolean(info?.halfDay);
+          const fullMine = info?.mine && !halfDay;
+          const fullTeam = info?.team && !info.mine && !halfDay;
           return (
             <div
               key={cell.key}
-              title={info?.names.join(", ")}
+              title={info?.titles.join("\n")}
               className={cn(
-                "relative grid place-items-center rounded-lg text-[11px] text-[#3f4376]",
+                "relative grid place-items-center overflow-hidden rounded-lg text-[11px] text-[#3f4376]",
                 large ? "h-11 text-sm" : "h-8",
                 !cell.date && "text-[#d4d5e1]",
-                info?.team && !info.mine && !isToday && "bg-[#e5fbf3] font-semibold text-[#08784c]",
-                info?.mine && !isToday && "bg-[#e8effd] font-semibold text-primary",
+                fullTeam && !isToday && "bg-[#e5fbf3] font-semibold text-[#08784c]",
+                fullMine && !info?.pending && !isToday && "bg-[#e8effd] font-semibold text-primary",
+                fullMine && info?.pending && !isToday && "bg-[#fff1e4] font-semibold text-[#b86a1b]",
+                halfDay && info?.mine && !info.pending && !isToday && "font-semibold text-primary",
+                halfDay && info?.mine && info.pending && !isToday && "font-semibold text-[#b86a1b]",
+                halfDay && info?.team && !info.mine && !isToday && "font-semibold text-[#08784c]",
                 isToday && "bg-primary font-semibold text-white shadow-[0_4px_10px_rgba(25,90,240,0.28)]",
               )}
             >
-              {cell.day}
+              {halfDay && info && !isToday ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "pointer-events-none absolute inset-0",
+                    info.mine && !info.pending && "bg-[#e8effd]",
+                    info.mine && info.pending && "bg-[#fff1e4]",
+                    info.team && !info.mine && "bg-[#e5fbf3]",
+                  )}
+                  style={{ clipPath: "polygon(0 0, 100% 0, 0 100%)" }}
+                />
+              ) : null}
+              <span className="relative z-10">{cell.day}</span>
               {info && !isToday ? (
-                <span className="absolute bottom-1 size-1 rounded-full bg-current" />
+                <span className="absolute bottom-1 z-10 size-1 rounded-full bg-current" />
               ) : null}
             </div>
           );
@@ -107,25 +200,68 @@ export function LeaveCalendar({
       </div>
       <div className="mt-4 flex flex-wrap gap-4 border-t border-border pt-3 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <i className="size-1.5 rounded-full bg-[#0af09b]" />
-          Csapattag távolléte
+          <i className="size-2 rounded-sm bg-[#e8effd] ring-1 ring-primary/30" />
+          Saját (jóváhagyott)
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <i className="size-1.5 rounded-full bg-primary" />
-          Saját igény / mai nap
+          <i className="size-2 rounded-sm bg-[#fff1e4] ring-1 ring-[#b86a1b]/30" />
+          Saját (függőben)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <i
+            className="size-2 rounded-sm ring-1 ring-primary/30"
+            style={{
+              background: "linear-gradient(to bottom right, #e8effd 50%, transparent 50%)",
+            }}
+          />
+          Fél nap
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <i className="size-2 rounded-sm bg-[#e5fbf3] ring-1 ring-[#08784c]/30" />
+          Csapat távolléte
         </span>
       </div>
       {large ? (
         <ul className="mt-4 grid gap-2">
-          {monthEvents.length === 0 ? (
-            <li className="text-sm text-muted-foreground">Ebben a hónapban nincs rögzített távollét.</li>
+          {monthPeriods.length === 0 ? (
+            <li className="text-sm text-muted-foreground">
+              Ebben a hónapban nincs rögzített távollét.
+            </li>
           ) : (
-            monthEvents.map((event, index) => (
-              <li key={`${event.date}-${event.name}-${index}`} className="flex items-center justify-between text-sm">
-                <span className="font-medium">{event.name}</span>
-                <span className="text-muted-foreground">
-                  {event.date.slice(8, 10)}. · {event.kind === "mine" ? "saját" : "csapat"}
-                </span>
+            monthPeriods.map((period) => (
+              <li
+                key={period.key}
+                className={cn(
+                  "flex flex-col gap-2 rounded-xl border px-3 py-3 sm:flex-row sm:items-center sm:justify-between",
+                  period.kind === "mine"
+                    ? period.status === "pending"
+                      ? "border-[#f5d5a8] bg-[#fff8f0]"
+                      : "border-[#c9d8fb] bg-[#f5f8ff]"
+                    : "border-[#cdeedf] bg-[#f3fcf8]",
+                )}
+              >
+                <div>
+                  <p className="text-sm font-semibold">
+                    {period.kind === "mine" ? "Te" : period.name}
+                    <span className="ml-2 font-normal text-muted-foreground">
+                      {formatRange(period.startDate, period.endDate)}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {period.typeName}
+                    {" · "}
+                    {formatWorkDays(
+                      period.halfDay ? 0.5 : period.dates.length,
+                      period.halfDay,
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {period.kind === "mine" ? "saját" : "csapat"}
+                  </span>
+                  <StatusBadge status={period.status} />
+                </div>
               </li>
             ))
           )}

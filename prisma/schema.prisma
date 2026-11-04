@@ -113,6 +113,7 @@ model LeaveRequest {
   workDays    Float
   halfDay     Boolean     @default(false)
   note        String?     @db.Text
+  reviewNote  String?     @db.Text
   status      LeaveStatus
   reviewerId  Int?
   reviewer    User?       @relation("Reviewer", fields: [reviewerId], references: [id])

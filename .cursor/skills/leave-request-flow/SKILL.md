@@ -29,8 +29,10 @@ description: >-
 
 ## UI
 
+- Shared review modal: `review-request-dialog.tsx` (optional megjegyzés checkbox → `reviewNote`)
 - Employee: `request-dialog.tsx`
 - Manager header: `pending-approvals-panel.tsx` in `shell-frame.tsx` when `hasDirectReports`
+- Csapatom pending next: `team-people-list.tsx` opens same modal
 - Table review: `review-buttons.tsx` + `/jovahagyasok`
 
 ## Checklist

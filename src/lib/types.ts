@@ -10,6 +10,8 @@ export type RequestRow = {
   deductsBalance: boolean;
   status: LeaveStatus;
   note: string | null;
+  reviewNote: string | null;
+  reviewedAt: string | null;
   personName: string;
   initials: string;
   department: string;
@@ -42,6 +44,13 @@ export type ShellData = {
   selectedCompanyName: string;
   pendingApprovals: number;
   hasDirectReports: boolean;
-  notifications: { id: number; title: string; detail: string; href: string }[];
+  unreadNotifications: number;
+  notifications: {
+    id: number;
+    title: string;
+    detail: string;
+    href: string;
+    read: boolean;
+  }[];
   hrContacts: { name: string; email: string }[];
 };

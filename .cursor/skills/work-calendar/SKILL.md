@@ -36,6 +36,13 @@ Loaders: `src/lib/work-calendar.ts`. Pure logic: `src/lib/dates.ts`.
 - Relocated Saturday inside a leave range **does** count
 - Seed defaults: `DEFAULT_HOLIDAYS_2026` in dates.ts → seed into `CalendarDay`
 
+## After admin calendar change
+
+`setCalendarDay` calls `recalculateLeaveRequestsOverlapping(date)`:
+- finds pending/approved requests spanning that date
+- recomputes `workDays` with current rules (add or remove the day)
+- e.g. remove relocated Saturday → Dec 10–16 drops from 6 to 5 days
+
 ## After schema change
 
 Create/alter table (docker MySQL on 3307), `npm run db:generate`. Prefer not wiping seed data unless user asks `db:setup`.
