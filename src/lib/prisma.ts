@@ -17,6 +17,8 @@ function makeClient() {
       password: process.env.DATABASE_PASSWORD ?? "leave",
       database: process.env.DATABASE_NAME ?? "leave_management",
       connectionLimit: 10,
+      // MySQL 8 caching_sha2_password — without this the pool stays empty (45028).
+      allowPublicKeyRetrieval: true,
     });
 
   if (process.env.NODE_ENV !== "production") {

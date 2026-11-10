@@ -28,13 +28,17 @@ If `prisma db push --accept-data-loss` is blocked by Prisma AI guard, apply DDL 
 
 `docker exec leave-mysql mysql -uleave -pleave leave_management -e "..."`.
 
-## Pool error after MySQL was down
+## Pool error `45028`
 
-Prisma keeps a dead pool in the Next process:
+Two common causes:
 
-1. `docker compose up -d` (confirm healthy)
-2. Kill Next on 3002 (and stray 3000 for this repo)
-3. `npm run dev -- --port 3002`
+1. **MySQL was down / dead pool in Next** — restart MySQL, then restart Next:
+   ```bash
+   docker compose up -d
+   # Ctrl+C the old npm run dev, then:
+   npm run dev -- -p 3002
+   ```
+2. **MySQL 8 `caching_sha2_password`** — `src/lib/prisma.ts` must set `allowPublicKeyRetrieval: true` on `PrismaMariaDb`. Without it the pool stays empty (`active=0 idle=0`) even when port 3307 answers.
 
 App origin/OAuth expect **3002**.
 
